@@ -19,7 +19,7 @@ class OHLC:
 		self.high = row.high
 		self.low = row.low
 		self.close = row.close
-		self.volume	= row.volume
+		self.volume = row.volume
 		self.open_interest = row.open_interest
 
 	def __repr__(self):

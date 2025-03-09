@@ -1,3 +1,4 @@
+from __future__ import annotations
 import re
 from functools import total_ordering
 
@@ -26,10 +27,10 @@ class GlobexCode:
 	def _get_tuple(self) -> tuple[str, int, str]:
 		return self.root, self.year, self.month
 
-	def __eq__(self, other: "GlobexCode") -> bool:
+	def __eq__(self, other: GlobexCode) -> bool:
 		return self._get_tuple() == other._get_tuple()
 
-	def __lt__(self, other: "GlobexCode") -> bool:
+	def __lt__(self, other: GlobexCode) -> bool:
 		return self._get_tuple() < other._get_tuple() # type: ignore
 
 	def __hash__(self) -> int:

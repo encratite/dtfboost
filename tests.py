@@ -1,3 +1,4 @@
+from typing import Any
 import os
 import pandas as pd
 from config import Configuration
@@ -42,21 +43,30 @@ def test_ohlc_time_series() -> None:
 			print(f"series.get({time}): {e}")
 
 	# Multiple values
-	time = pd.Timestamp("2008-01-10")
-	counts = [
-		5,
-		10
-	]
+	time = pd.Timestamp("2008-02-12")
+	counts = [5, 100]
 	for count in counts:
-		print(f"series.get({time}):")
+		print(f"series.get({time}, count={count}):")
 		try:
 			values = series.get(time, count=count)
-			i = 1
-			for value in values:
-				print(f"{i}. {value}")
-				i += 1
+			print_values(values)
 		except Exception as e:
 			print(e)
+
+	# Multiple values based on offsets
+	offsets = [1, 2, 4, 8]
+	print(f"series.get({time}, offsets={offsets}):")
+	try:
+		values = series.get(time, offsets=offsets)
+		print_values(values)
+	except Exception as e:
+		print(e)
+
+def print_values(values: list[Any]) -> None:
+	i = 1
+	for value in values:
+		print(f"{i}. {value}")
+		i += 1
 
 # test_time_series()
 test_ohlc_time_series()

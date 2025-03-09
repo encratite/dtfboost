@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import cast, TypeVar, Generic
+from typing import cast, TypeVar, Generic, Iterator
 from sortedcontainers import SortedDict
 import pandas as pd
 from ohlc import OHLC
@@ -33,23 +33,34 @@ class TimeSeries(Generic[T]):
 		series = TimeSeries(data)
 		return series
 
-	def get(self, time: pd.Timestamp, count: int = 1) -> list[Generic[T]] | Generic[T]:
-		value = self._data.get(time)
-		if count == 1 and value is not None:
-			return value
+	def get(self, time: pd.Timestamp, count: int | None = None, offsets: list[int] | None = None) -> list[Generic[T]] | Generic[T]:
+		assert count is None or offsets is None
+		single_mode = count is None and offsets is None
+		if single_mode:
+			value = self._data.get(time)
+			if value is not None:
+				return value
 		index = self._data.bisect_right(time)
 		if index == 0:
 			raise Exception("No record for that date")
 		values: list[Generic[T]] = []
 		keys = self._data.keys()
-		for i in range(count):
-			key_index = index - i - 1
+		if offsets is None:
+			if single_mode:
+				offsets = [1]
+			else:
+				offsets = range(count)
+		for offset in offsets:
+			key_index = index - offset - 1
 			if key_index < 0:
 				raise Exception("Not enough data available")
 			key = keys[key_index] # type: ignore
 			value = self._data[key]
 			values.append(value)
-		if count == 1:
+		if single_mode:
 			return values[0]
 		else:
 			return values
+
+	def __iter__(self) -> Iterator[pd.Timestamp]:
+		return self._data.keys().__iter__()

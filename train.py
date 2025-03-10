@@ -58,8 +58,8 @@ def get_features(start: pd.Timestamp, end: pd.Timestamp, data: TrainingData, bal
 	momentum_offsets = [
 		2,
 		3,
-		# 5,
-		# 10,
+		5,
+		10,
 		25,
 		50,
 		# 100,
@@ -143,9 +143,6 @@ def get_fred_features(time: pd.Timestamp, data: TrainingData) -> tuple[list[str]
 		("Unemployment Rate", "UNRATE", PostProcessing.NOMINAL_AND_DIFFERENCE),
 		# Market Yield on U.S. Treasury Securities at 10-Year Constant Maturity, Quoted on an Investment Basis (DGS10), percentage, daily
 		("10-Year T-Note Yield", "DGS10", PostProcessing.NOMINAL_AND_DIFFERENCE),
-		# 10-Year Treasury Constant Maturity Minus 2-Year Treasury Constant Maturity (T10Y2Y), percentage, daily
-		# Excluded due to the data starting in 2020
-		# ("10-Year Treasury Constant Maturity Minus 2-Year Treasury Constant Maturity", "T10Y2Y", PostProcessing.NOMINAL),
 		# 10-Year Treasury Constant Maturity Minus 3-Month Treasury Constant Maturity (T10Y3M), percentage, daily
 		("10-Year T-Note Minus 3-Month T-Bill Yield", "T10Y3M", PostProcessing.NOMINAL),
 		# 30-Year Fixed Rate Mortgage Average in the United States (MORTGAGE30US), percentage, weekly
@@ -246,15 +243,16 @@ def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timesta
 	f1_scores = []
 	heatmap_data = []
 	best_model = None
-	best_score = None
+	max_precision = None
+	max_f1 = None
 
 	# Iterate over hyperparameters
 	# num_leaves_values = [31, 60, 90, 120, 180, 255]
-	num_leaves_values = [31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 45, 50, 55, 60]
-	# num_leaves_values = [35]
+	# num_leaves_values = [31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 45, 50, 55, 60]
+	num_leaves_values = [35]
 	# num_iterations_values = [75, 100, 200, 300, 500, 1000]
-	num_iterations_values = [200, 250, 500, 750, 1000, 1250, 1500, 1750, 2000, 3000, 4000, 5000, 10000]
-	# num_iterations_values = [1500]
+	# num_iterations_values = [200, 250, 500, 750, 1000, 1250, 1500, 1750, 2000, 3000, 4000, 5000, 10000]
+	num_iterations_values = [1500]
 	inner_iterations = 1
 	for num_leaves in num_leaves_values:
 		heatmap_row = []
@@ -265,8 +263,8 @@ def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timesta
 					"verbosity": -1,
 					"objective": "binary",
 					# "metric": ["binary_logloss", "auc"],
-					# "metric": "binary_logloss",
-					"metric": "average_precision",
+					"metric": "binary_logloss",
+					# "metric": "average_precision",
 					"num_iterations": num_iterations,
 					"num_leaves": num_leaves,
 				}
@@ -288,8 +286,9 @@ def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timesta
 				f1_scores.append(f1)
 				samples.append(f1)
 
-				if best_score is None or precision > best_score:
-					best_score = precision
+				if max_precision is None or precision > max_precision:
+					max_precision = precision
+					max_f1 = f1
 					best_model = model
 
 			sample = median(samples)
@@ -301,30 +300,37 @@ def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timesta
 	label_distribution = get_label_distribution(y_validation)
 	median_roc_auc = median(roc_auc_values)
 	median_f1 = median(f1_scores)
+	print(f"Max precision: {max_precision:.1%}")
 	print(f"Median precision: {median_precision:.1%}")
 	print(f"Random precision: {random_precision:.1%}")
 	print(f"Positive labels: {label_distribution[1]:.1%}")
 	print(f"Negative labels: {label_distribution[0]:.1%}")
 	print(f"Median ROC-AUC: {median_roc_auc:.3f}")
+	print(f"Max F1: {max_f1:.3f}")
 	print(f"Median F1: {median_f1:.3f}")
 
 	# SHAP summary
 	explainer = shap.TreeExplainer(best_model)
-	shap_values = explainer(x_train)
+	x_all = np.concatenate((x_train, x_validation))
+	shap_values = explainer(x_all)
 	shap_values.feature_names = feature_names
-	shap.summary_plot(shap_values, x_train, max_display=30, show=False, plot_size=(12, 12))
-	plt.gcf().canvas.manager.set_window_title("SHAP Summary Plot")
-	plt.show()
+	shap.summary_plot(shap_values, x_all, max_display=30, show=False, plot_size=(12, 12))
+	save_plot("shap")
 
 	# Show heatmap of hyperparameters
 	x_tick_labels = [str(x) for x in num_iterations_values]
 	y_tick_labels = [str(x) for x in num_leaves_values]
+	plt.figure(figsize=(12, 10))
 	seaborn.heatmap(heatmap_data, xticklabels=x_tick_labels, yticklabels=y_tick_labels, cbar_kws={"label": "F1 Score"})
 	plt.xlabel("Iterations")
 	plt.ylabel("Leaves")
 	plt.gca().invert_yaxis()
-	plt.gcf().canvas.manager.set_window_title("Hyperparameters Heatmap")
-	plt.show()
+	save_plot("hyperparameters")
+
+def save_plot(name: str) -> None:
+	plot_path = os.path.join(Configuration.PLOT_DIRECTORY, f"{name}.png")
+	plt.savefig(plot_path)
+	plt.close()
 
 def binary_predictions(predictions: npt.NDArray[np.float64]) -> npt.NDArray[np.int8]:
 	return (predictions > 0.5).astype(dtype=np.int8)

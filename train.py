@@ -141,25 +141,69 @@ def get_fred_features(time: pd.Timestamp, data: TrainingData) -> tuple[list[str]
 		("Initial Unemployment Claims", "ICSA", PostProcessing.RATE_OF_CHANGE),
 		# Unemployment Rate (UNRATE), percentage, monthly
 		("Unemployment Rate", "UNRATE", PostProcessing.NOMINAL_AND_DIFFERENCE),
+		# Market Yield on U.S. Treasury Securities at 10-Year Constant Maturity, Quoted on an Investment Basis (DGS10), percentage, daily
+		("10-Year T-Note Yield", "DGS10", PostProcessing.NOMINAL_AND_DIFFERENCE),
 		# 10-Year Treasury Constant Maturity Minus 2-Year Treasury Constant Maturity (T10Y2Y), percentage, daily
 		# Excluded due to the data starting in 2020
 		# ("10-Year Treasury Constant Maturity Minus 2-Year Treasury Constant Maturity", "T10Y2Y", PostProcessing.NOMINAL),
+		# 10-Year Treasury Constant Maturity Minus 3-Month Treasury Constant Maturity (T10Y3M), percentage, daily
+		("10-Year T-Note Minus 3-Month T-Bill Yield", "T10Y3M", PostProcessing.NOMINAL),
 		# 30-Year Fixed Rate Mortgage Average in the United States (MORTGAGE30US), percentage, weekly
 		("30-Year Fixed Rate Mortgage", "MORTGAGE30US", PostProcessing.NOMINAL_AND_DIFFERENCE),
+		# 15-Year Fixed Rate Mortgage Average in the United States (MORTGAGE15US), percentage, weekly
+		("15-Year Fixed Rate Mortgage Average", "MORTGAGE15US", PostProcessing.NOMINAL_AND_DIFFERENCE),
+		# Overnight Reverse Repurchase Agreements: Treasury Securities Sold by the Federal Reserve in the Temporary Open Market Operations (RRPONTSYD), nominal, daily
+		("Overnight Reverse Repurchase Agreements", "RRPONTSYD", PostProcessing.NOMINAL_AND_DIFFERENCE),
 		# Federal Funds Effective Rate (FEDFUNDS), percentage, monthly
 		("Federal Funds Effective Rate", "FEDFUNDS", PostProcessing.NOMINAL_AND_DIFFERENCE),
+		# Federal Funds Effective Rate (DFF)
+		("Federal Funds Effective Rate (Daily)", "DFF", PostProcessing.NOMINAL_AND_DIFFERENCE),
 		# M2 money supply (M2SL), nominal, monthly
-		("M2 Money Supply", "M2SL", PostProcessing.RATE_OF_CHANGE),
+		("M2 Supply", "M2SL", PostProcessing.RATE_OF_CHANGE),
 		# Consumer Price Index for All Urban Consumers: All Items in U.S. City Average (CPIAUCSL), nominal, weekly
-		("Consumer Price Index for Urban Consumers", "CPIAUCSL", PostProcessing.RATE_OF_CHANGE),
+		("Consumer Price Index", "CPIAUCSL", PostProcessing.RATE_OF_CHANGE),
 		# Assets: Total Assets: Total Assets (Less Eliminations from Consolidation): Wednesday Level (WALCL), nominal, weekly
-		("Total Assets (Less Eliminations from Consolidation)", "WALCL", PostProcessing.RATE_OF_CHANGE),
+		("Total Assets", "WALCL", PostProcessing.RATE_OF_CHANGE),
 		# Real Gross Domestic Product (GDPC1), nominal, quarterly
 		("Real Gross Domestic Product", "GDPC1", PostProcessing.RATE_OF_CHANGE),
 		# All Employees, Total Nonfarm (PAYEMS), nominal, monthly
-		("All Employees, Total Nonfarm", "PAYEMS", PostProcessing.RATE_OF_CHANGE),
+		("All Employees", "PAYEMS", PostProcessing.RATE_OF_CHANGE),
 		# Job Openings: Total Nonfarm (JTSJOL), nominal, monthly
-		("Job Openings: Total Nonfarm", "JTSJOL", PostProcessing.RATE_OF_CHANGE),
+		("Job Openings", "JTSJOL", PostProcessing.RATE_OF_CHANGE),
+		# Producer Price Index by Commodity: Final Demand: Finished Goods Less Foods and Energy (WPSFD4131), nominal, monthly
+		("Finished Goods Less Foods and Energy", "WPSFD4131", PostProcessing.RATE_OF_CHANGE),
+		# Producer Price Index by Commodity: Final Demand: Finished Goods (WPSFD49207), nominal, monthly
+		("Finished Goods", "WPSFD49207", PostProcessing.RATE_OF_CHANGE),
+		# Advance Retail Sales: Retail Trade and Food Services (RSAFS), nominal, monthly
+		("Retail Trade and Food Services", "RSAFS", PostProcessing.RATE_OF_CHANGE),
+		# Imports of Goods and Services (IMPGS), nominal, quarterly
+		("Imports of Goods and Services", "IMPGS", PostProcessing.RATE_OF_CHANGE),
+		# Exports of Goods and Services (EXPGS), nominal, quarterly
+		("Exports of Goods and Services", "EXPGS", PostProcessing.RATE_OF_CHANGE),
+		# Average Weekly Earnings of All Employees, Total Private (CES0500000011), nominal, monthly
+		("Average Weekly Earnings", "CES0500000011", PostProcessing.RATE_OF_CHANGE),
+		# Nonfarm Business Sector: Labor Productivity (Output per Hour) for All Workers (PRS85006092), percentage, quarterly
+		("Labor Productivity", "PRS85006092", PostProcessing.NOMINAL),
+		# Nonfarm Business Sector: Unit Labor Costs for All Workers (PRS85006112), percentage, quarterly
+		("Unit Labor Costs", "PRS85006112", PostProcessing.NOMINAL),
+		# Manufacturers' New Orders: Durable Goods (DGORDER), nominal, monthly
+		("Durable Goods New Orders", "DGORDER", PostProcessing.RATE_OF_CHANGE),
+		# Manufacturers' New Orders: Total Manufacturing (AMTMNO), nominal, monthly
+		("Total Manufacturing New Orders", "AMTMNO", PostProcessing.RATE_OF_CHANGE),
+		# New One Family Houses Sold: United States (HSN1F), nominal, monthly
+		("New One Family Houses Sold", "HSN1F", PostProcessing.RATE_OF_CHANGE),
+		# New Privately-Owned Housing Units Started: Total Units (HOUST), nominal, monthly
+		("New Privately-Owned Housing Units Started", "HOUST", PostProcessing.RATE_OF_CHANGE),
+		# Industrial Production: Total Index (INDPRO), nominal, monthly
+		("Industrial Production - Total Index", "INDPRO", PostProcessing.RATE_OF_CHANGE),
+		# Personal Income (PI), nominal, monthly
+		("Personal Income", "PI", PostProcessing.RATE_OF_CHANGE),
+		# Personal Consumption Expenditures (PCE), nominal, monthly
+		("Personal Consumption Expenditures", "PCE", PostProcessing.RATE_OF_CHANGE),
+		# Trade Balance: Goods and Services, Balance of Payments Basis (BOPGSTB), nominal, monthly
+		("Trade Balance - Goods and Services", "BOPGSTB", PostProcessing.RATE_OF_CHANGE),
+		# University of Michigan: Consumer Sentiment (UMCSENT), nominal, monthly
+		("University of Michigan Consumer Sentiment", "UMCSENT", PostProcessing.NOMINAL_AND_DIFFERENCE),
 	]
 	feature_names = []
 	features = []
@@ -207,8 +251,10 @@ def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timesta
 	# Iterate over hyperparameters
 	# num_leaves_values = [31, 60, 90, 120, 180, 255]
 	num_leaves_values = [31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 45, 50, 55, 60]
+	# num_leaves_values = [35]
 	# num_iterations_values = [75, 100, 200, 300, 500, 1000]
 	num_iterations_values = [200, 250, 500, 750, 1000, 1250, 1500, 1750, 2000, 3000, 4000, 5000, 10000]
+	# num_iterations_values = [1500]
 	inner_iterations = 1
 	for num_leaves in num_leaves_values:
 		heatmap_row = []
@@ -266,7 +312,7 @@ def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timesta
 	explainer = shap.TreeExplainer(best_model)
 	shap_values = explainer(x_train)
 	shap_values.feature_names = feature_names
-	shap.summary_plot(shap_values, x_train, max_display=25, show=False)
+	shap.summary_plot(shap_values, x_train, max_display=30, show=False, plot_size=(12, 12))
 	plt.gcf().canvas.manager.set_window_title("SHAP Summary Plot")
 	plt.show()
 

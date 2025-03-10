@@ -1,6 +1,7 @@
 import os
 import sys
 import random
+from statistics import median
 from collections import defaultdict
 import pandas as pd
 import numpy as np
@@ -8,6 +9,8 @@ import numpy.typing as npt
 from sklearn.preprocessing import StandardScaler
 import lightgbm as lgb
 from sklearn.metrics import roc_auc_score, f1_score, precision_score, confusion_matrix
+import seaborn
+import matplotlib.pyplot as plt
 from series import TimeSeries
 from ohlc import OHLC
 from config import Configuration
@@ -31,11 +34,16 @@ def get_features(data: TrainingData, start: pd.Timestamp, end: pd.Timestamp, bal
 		0,
 		1,
 		2,
-		10,
+		3,
+		# 5,
+		# 10,
 		25,
 		50,
+		# 100,
 		150,
-		250
+		# 200,
+		250,
+		# 500
 	]
 	max_offset = max(offsets)
 	i = 0
@@ -93,22 +101,66 @@ def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timesta
 	x_train = scaler.transform(x_train)
 	x_validation = scaler.transform(x_validation)
 
-	# Hyperparameters
-	num_iterations_values = [50, 100, 200, 500, 1000]
-	for num_iterations in num_iterations_values:
-		params = {
-			"verbosity": -1,
-			"objective": "binary",
-			"metric": ["binary_logloss", "auc"],
-			"num_iterations": num_iterations
-		}
-		train_dataset = lgb.Dataset(x_train, label=y_train)
-		validation_dataset = lgb.Dataset(x_validation, label=y_validation, reference=train_dataset)
-		model = lgb.train(params, train_dataset, valid_sets=[validation_dataset])
+	# Statistics
+	precision_values = []
+	roc_auc_values = []
+	f1_scores = []
 
-		print(f"num_iterations: {num_iterations}")
-		print_metrics("Training", model, x_train, y_train)
-		print_metrics("Validation", model, x_validation, y_validation)
+	heatmap_data = []
+
+	# Iterate over hyperparameters
+	num_leaves_values = [31, 60, 90, 120]
+	num_iterations_values = [50, 100, 200, 300]
+	inner_iterations = 50
+	for num_leaves in num_leaves_values:
+		heatmap_row = []
+		for num_iterations in num_iterations_values:
+			samples = []
+			for _ in range(inner_iterations):
+				params = {
+					"verbosity": -1,
+					"objective": "binary",
+					"metric": ["binary_logloss", "auc"],
+					"num_iterations": num_iterations,
+					"num_leaves": num_leaves,
+				}
+				train_dataset = lgb.Dataset(x_train, label=y_train)
+				validation_dataset = lgb.Dataset(x_validation, label=y_validation, reference=train_dataset)
+				model = lgb.train(params, train_dataset, valid_sets=[validation_dataset])
+
+				print(f"num_leaves: {num_leaves}, num_iterations: {num_iterations}")
+				# print_metrics("Training", model, x_train, y_train)
+				print_metrics("Validation", model, x_validation, y_validation)
+
+				predictions = model.predict(x_validation)
+				predictions = binary_predictions(predictions)
+				precision = precision_score(y_validation, predictions)
+				precision_values.append(precision)
+				roc_auc = roc_auc_score(y_validation, predictions)
+				roc_auc_values.append(roc_auc)
+				f1 = f1_score(y_validation, predictions)
+				f1_scores.append(f1)
+				samples.append(f1)
+			sample = median(samples)
+			heatmap_row.append(sample)
+		heatmap_data.append(heatmap_row)
+
+	median_precision = median(precision_values)
+	median_roc_auc = median(roc_auc_values)
+	median_f1 = median(f1_scores)
+	print(f"Median precision: {median_precision:.1%}")
+	print(f"Median ROC-AUC: {median_roc_auc:.3f}")
+	print(f"Median F1: {median_f1:.3f}")
+
+	# Show heatmap of hyperparameters
+	x_tick_labels = [str(x) for x in num_iterations_values]
+	y_tick_labels = [str(x) for x in num_leaves_values]
+	seaborn.heatmap(heatmap_data, xticklabels=x_tick_labels, yticklabels=y_tick_labels, cbar_kws={"label": "F1 Score"})
+	plt.xlabel("Iterations")
+	plt.ylabel("Leaves")
+	plt.gca().invert_yaxis()
+	plt.gcf().canvas.manager.set_window_title("Hyperparameters Heatmap")
+	plt.show()
 
 def binary_predictions(predictions: np.ndarray[np.float64]) -> np.ndarray[np.int8]:
 	return (predictions > 0.5).astype(dtype=np.int8) # type: ignore

@@ -5,7 +5,7 @@ from enum import Enum
 from itertools import islice
 import sys
 import random
-from statistics import stdev, median
+from statistics import stdev, mean
 from collections import defaultdict
 import pandas as pd
 import numpy as np
@@ -374,66 +374,94 @@ def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timesta
 	roc_auc_values = []
 	f1_scores = []
 	heatmap_data = []
-	best_model = None
 	max_precision = None
 	max_f1 = None
+	best_model_parameters = None
+	best_model = None
+	best_model_precision = None
+	best_model_f1 = None
 
 	# Iterate over hyperparameters
-	num_leaves_values = [31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 45, 50, 55, 60]
-	# num_leaves_values = [35]
-	num_iterations_values = [200, 250, 500, 750, 1000, 1250, 1500, 1750, 2000, 3000, 4000, 5000, 10000]
-	# num_iterations_values = [1500]
+	num_leaves_values = [20, 30, 40, 50]
+	min_data_in_leaf_values = [10, 15, 20, 25, 30]
+	# max_depth_values = [-1, 10, 20, 50]
+	max_depth_values = [-1]
+	num_iterations_values = [75, 100, 150, 200, 250]
+	parameter_f1: defaultdict[str, defaultdict[int, list[float]]] = defaultdict(lambda: defaultdict(list))
 	for num_leaves in num_leaves_values:
-		heatmap_row = []
-		for num_iterations in num_iterations_values:
-			params = {
-				"verbosity": -1,
-				"objective": "binary",
-				# "metric": ["binary_logloss", "auc"],
-				"metric": "binary_logloss",
-				# "metric": "average_precision",
-				"num_iterations": num_iterations,
-				"num_leaves": num_leaves,
-			}
-			train_dataset = lgb.Dataset(x_train, label=y_train, feature_name=feature_names)
-			validation_dataset = lgb.Dataset(x_validation, label=y_validation, feature_name=feature_names, reference=train_dataset)
-			model = lgb.train(params, train_dataset, valid_sets=[validation_dataset])
+		for min_data_in_leaf in min_data_in_leaf_values:
+			for max_depth in max_depth_values:
+				for num_iterations in num_iterations_values:
+					params = {
+						"objective": "binary",
+						# "metric": ["binary_logloss", "auc"],
+						"metric": "binary_logloss",
+						# "metric": "average_precision",
+						"verbosity": -1,
+						"num_leaves": num_leaves,
+						"min_data_in_leaf": min_data_in_leaf,
+						"max_depth": max_depth,
+						"num_iterations": num_iterations,
+					}
+					train_dataset = lgb.Dataset(x_train, label=y_train, feature_name=feature_names)
+					validation_dataset = lgb.Dataset(x_validation, label=y_validation, feature_name=feature_names, reference=train_dataset)
+					model = lgb.train(params, train_dataset, valid_sets=[validation_dataset])
 
-			print(f"num_leaves: {num_leaves}, num_iterations: {num_iterations}")
-			# print_metrics("Training", model, x_train, y_train)
-			print_metrics("Validation", model, x_validation, y_validation)
+					model_parameters = {
+						"num_leaves": num_leaves,
+						"min_data_in_leaf": min_data_in_leaf,
+						"max_depth": max_depth,
+						"num_iterations": num_iterations,
+					}
+					print(model_parameters)
+					# print_metrics("Training", model, x_train, y_train)
+					print_metrics("Validation", model, x_validation, y_validation)
 
-			predictions = model.predict(x_validation)
-			predictions = binary_predictions(predictions)
-			precision = precision_score(y_validation, predictions)
-			precision_values.append(precision)
-			roc_auc = roc_auc_score(y_validation, predictions)
-			roc_auc_values.append(roc_auc)
-			f1 = f1_score(y_validation, predictions)
-			f1_scores.append(f1)
-			heatmap_row.append(f1)
+					predictions = model.predict(x_validation)
+					predictions = binary_predictions(predictions)
+					precision = precision_score(y_validation, predictions)
+					precision_values.append(precision)
+					roc_auc = roc_auc_score(y_validation, predictions)
+					roc_auc_values.append(roc_auc)
+					f1 = f1_score(y_validation, predictions)
+					f1_scores.append(f1)
 
-			if max_precision is None or precision > max_precision:
-				max_precision = precision
-				max_f1 = f1
-				best_model = model
-		heatmap_data.append(heatmap_row)
+					if best_model is None or f1 > best_model_f1:
+						best_model_precision = precision
+						best_model_f1 = f1
+						best_model_parameters = model_parameters
+						best_model = model
+					max_f1 = max(f1, max_f1 if max_f1 is not None else f1)
+					max_precision = max(precision, max_precision if max_precision is not None else precision)
+					for name, value in model_parameters.items():
+						parameter_f1[name][value].append(f1)
 
-	median_precision = median(precision_values)
+	mean_precision = mean(precision_values)
 	random_precision = get_random_precision(y_validation)
 	label_distribution = get_label_distribution(y_validation)
-	median_roc_auc = median(roc_auc_values)
-	median_f1 = median(f1_scores)
-	print(f"Max precision: {max_precision:.1%}")
-	print(f"Median precision: {median_precision:.1%}")
+	mean_roc_auc = mean(roc_auc_values)
+	mean_f1 = mean(f1_scores)
+	print(f"Mean precision: {mean_precision:.1%}")
 	print(f"Random precision: {random_precision:.1%}")
 	print(f"Positive labels: {label_distribution[1]:.1%}")
 	print(f"Negative labels: {label_distribution[0]:.1%}")
-	print(f"Median ROC-AUC: {median_roc_auc:.3f}")
-	print(f"Max F1: {max_f1:.3f}")
-	print(f"Median F1: {median_f1:.3f}")
+	print(f"Mean ROC-AUC: {mean_roc_auc:.3f}")
+	print(f"Mean F1 score: {mean_f1:.3f}")
+	print(f"Maximum precision: {max_precision:.1%}")
+	print(f"Maximum F1 score: {max_f1:.3f}")
 
-	# SHAP summary
+	print("Mean F1 scores of hyperparameters:")
+	for name, values in parameter_f1.items():
+		print(f"\t{name}:")
+		for value, f1_values in values.items():
+			print(f"\t\t{value}: {mean(f1_values):.3f}")
+
+	print(f"Best model precision: {best_model_precision:.1%}")
+	print(f"Best model F1 score: {best_model_f1:.3f}")
+	print("Best hyperparameters:")
+	print(best_model_parameters)
+
+	# Render SHAP summary
 	explainer = shap.TreeExplainer(best_model)
 	x_all = np.concatenate((x_train, x_validation))
 	shap_values = explainer(x_all)
@@ -441,7 +469,8 @@ def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timesta
 	shap.summary_plot(shap_values, x_all, max_display=30, show=False, plot_size=(12, 12))
 	save_plot(symbol, "SHAP")
 
-	# Show heatmap of hyperparameters
+	"""
+	# Render heatmap of hyperparameters
 	x_tick_labels = [str(x) for x in num_iterations_values]
 	y_tick_labels = [str(x) for x in num_leaves_values]
 	plt.figure(figsize=(12, 10))
@@ -450,6 +479,7 @@ def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timesta
 	plt.ylabel("Leaves")
 	plt.gca().invert_yaxis()
 	save_plot(symbol, "Hyperparameters")
+	"""
 
 def save_plot(symbol: str, name: str) -> None:
 	plot_path = os.path.join(Configuration.PLOT_DIRECTORY, f"{symbol} {name}.png")

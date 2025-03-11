@@ -316,6 +316,18 @@ def get_economic_features(time: pd.Timestamp, data: TrainingData) -> tuple[list[
 		("Global Price of Soybeans", "PSOYBUSDM", PostProcessing.RATE_OF_CHANGE),
 		# Global price of Food index (PFOODINDEXM), nominal, monthly
 		("Global Price of Food index", "PFOODINDEXM", PostProcessing.RATE_OF_CHANGE),
+		# CBOE Volatility Index: VIX (VIXCLS), nominal, daily
+		("CBOE Volatility Index", "VIXCLS", PostProcessing.NOMINAL_AND_DIFFERENCE),
+		# CBOE S&P 500 3-Month Volatility Index (VXVCLS), nominal, daily
+		("CBOE S&P 500 3-Month Volatility Index", "VXVCLS", PostProcessing.NOMINAL_AND_DIFFERENCE),
+		# CBOE Gold ETF Volatility Index (GVZCLS), nominal, daily
+		("CBOE Gold ETF Volatility Index", "GVZCLS", PostProcessing.NOMINAL_AND_DIFFERENCE),
+		# CBOE Crude Oil ETF Volatility Index (OVXCLS), nominal, daily
+		("CBOE Crude Oil ETF Volatility Index", "OVXCLS", PostProcessing.NOMINAL_AND_DIFFERENCE),
+		# CBOE NASDAQ 100 Volatility Index (VXNCLS), nominal, daily
+		("CBOE NASDAQ 100 Volatility Index", "VXNCLS", PostProcessing.NOMINAL_AND_DIFFERENCE),
+		# CBOE DJIA Volatility Index (VXDCLS), nominal, daily
+		("CBOE DJIA Volatility Index", "VXDCLS", PostProcessing.NOMINAL_AND_DIFFERENCE),
 	]
 	feature_names = []
 	features = []
@@ -367,12 +379,10 @@ def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timesta
 	max_f1 = None
 
 	# Iterate over hyperparameters
-	# num_leaves_values = [31, 60, 90, 120, 180, 255]
-	# num_leaves_values = [31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 45, 50, 55, 60]
-	num_leaves_values = [35]
-	# num_iterations_values = [75, 100, 200, 300, 500, 1000]
-	# num_iterations_values = [200, 250, 500, 750, 1000, 1250, 1500, 1750, 2000, 3000, 4000, 5000, 10000]
-	num_iterations_values = [1500]
+	num_leaves_values = [31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 45, 50, 55, 60]
+	# num_leaves_values = [35]
+	num_iterations_values = [200, 250, 500, 750, 1000, 1250, 1500, 1750, 2000, 3000, 4000, 5000, 10000]
+	# num_iterations_values = [1500]
 	for num_leaves in num_leaves_values:
 		heatmap_row = []
 		for num_iterations in num_iterations_values:

@@ -51,45 +51,21 @@ def get_rate_of_change(new_value: float | int, old_value: float | int):
 
 def get_features(start: pd.Timestamp, end: pd.Timestamp, data: TrainingData, balanced_samples: bool = False, shuffle: bool = False) -> tuple[list[str], npt.NDArray[np.float64], npt.NDArray[np.int8]]:
 	assert start < end
-	# Offset 0 for the current day, offset 1 for yesterday, to calculate the binary label p(t) / p(t - 1) > 1
-	# Offset 1 also serves as a reference for momentum features
-	offsets = [0, 1]
-	# Number of days to look into the past to calculate relative returns, i.e. p(t - 1) / p(t - n) - 1
-	momentum_offsets = [
-		2,
-		3,
-		5,
-		10,
-		25,
-		50,
-		# 100,
-		150,
-		# 200,
-		250,
-		# 500
-	]
-	momentum_feature_names = [f"Momentum ({x} days)" for x in momentum_offsets]
-	feature_names = []
-	offsets += momentum_offsets
-	max_offset = max(offsets)
 	unbalanced_features: defaultdict[int, list[list[float]]] = defaultdict(list)
+	feature_names = []
+	ohlc_count = 250
 	# Skip initial OHLC time series keys to make sure that there is enough past data to calculate momentum
-	ohlc_series_offset = islice(data.ohlc_series, max_offset, None)
-	ohlc_keys = [t for t in ohlc_series_offset if start <= t < end]
-	for time in ohlc_keys:
-		time_feature_names, time_features = get_time_features(time)
-		records: list[OHLC] = data.ohlc_series.get(time, offsets=offsets)
-		close_values = [ohlc.close for ohlc in records]
-		today = close_values[0]
-		yesterday = close_values[1]
-		momentum_close_values = close_values[2:]
-		momentum_features = [get_rate_of_change(yesterday, close) for close in momentum_close_values]
-		fred_feature_names, fred_features = get_fred_features(time, data)
-		features = time_features + momentum_features + fred_features
-		feature_names = time_feature_names + momentum_feature_names + fred_feature_names
-		# Create a simple binary label for the most recent returns (i.e. comparing today and yesterday)
-		label_rate = get_rate_of_change(today, yesterday)
-		label = 1 if label_rate > 0 else 0
+	ohlc_keys_offset = islice(data.ohlc_series, ohlc_count, None)
+	ohlc_keys_in_range = [t for t in ohlc_keys_offset if start <= t < end]
+	days_since_high_map = get_days_since_high_map(data)
+	for time in ohlc_keys_in_range:
+		seasonality_feature_names, seasonality_features = get_seasonality_features(time)
+		technical_feature_names, technical_features, label = get_technical_features(time, days_since_high_map, data)
+		# economic_feature_names, economic_features = get_economic_features(time, data)
+		economic_feature_names = []
+		economic_features = []
+		features = seasonality_features + technical_features + economic_features
+		feature_names = seasonality_feature_names + technical_feature_names + economic_feature_names
 		unbalanced_features[label].append(features)
 
 	# Try to create a balanced data set by adding samples from the smaller class
@@ -118,22 +94,102 @@ def get_features(start: pd.Timestamp, end: pd.Timestamp, data: TrainingData, bal
 	np_labels = np.array(labels, dtype=np.int8)
 	return feature_names, np_features, np_labels
 
-def get_time_features(time: pd.Timestamp) -> tuple[list[str], list[float]]:
-	time_feature_names = [
+def get_seasonality_features(time: pd.Timestamp) -> tuple[list[str], list[float]]:
+	seasonality_feature_names = [
 		"Month",
 		"Day of the Month",
 		"Day of the Week",
 		"Week of the Year"
 	]
-	time_features = [
+	seasonality_features = [
 		time.month,
 		time.day,
 		time.dayofweek,
 		time.week,
 	]
-	return time_feature_names, time_features
+	return seasonality_feature_names, seasonality_features
 
-def get_fred_features(time: pd.Timestamp, data: TrainingData) -> tuple[list[str], list[float]]:
+def get_technical_features(time: pd.Timestamp, days_since_high_map: dict[pd.Timestamp, int], data: TrainingData) -> tuple[list[str], list[float], int]:
+	# Offset 0 for the current day, offset 1 for yesterday, to calculate the binary label p(t) / p(t - 1) > 1
+	# Offset 1 also serves as a reference for momentum features
+	offsets = [0, 1]
+	# Number of days to look into the past to calculate relative returns, i.e. p(t - 1) / p(t - n) - 1
+	momentum_offsets = [
+		2,
+		3,
+		5,
+		10,
+		25,
+		50,
+		100,
+		150,
+		200,
+		250
+	]
+	moving_averages = [
+		5,
+		10,
+		25,
+		50,
+		100,
+		150,
+		200,
+		250
+	]
+	days_since_high = [
+		20,
+		40,
+		60,
+		120
+	]
+	momentum_feature_names = [f"Momentum ({x} days)" for x in momentum_offsets]
+	moving_average_feature_names = [f"Price Minus Moving Average ({x} days)" for x in moving_averages]
+	technical_feature_names = momentum_feature_names + moving_average_feature_names
+	offsets += momentum_offsets
+	ohlc_count = max(max(offsets), max(moving_averages), max(days_since_high)) + 1
+	records: list[OHLC] = data.ohlc_series.get(time, count=ohlc_count)
+	close_values = [ohlc.close for ohlc in records]
+	today = close_values[0]
+	yesterday = close_values[1]
+	momentum_close_values = [close_values[i] for i in momentum_offsets]
+	momentum_features = [get_rate_of_change(yesterday, close) for close in momentum_close_values]
+	moving_average_features = []
+	for moving_average_days in moving_averages:
+		moving_average_values = close_values[1:1 + moving_average_days]
+		assert len(moving_average_values) == moving_average_days
+		# Calculate price minus simple moving average
+		moving_average = sum(moving_average_values) / moving_average_days
+		moving_average_feature = yesterday - moving_average
+		moving_average_features.append(moving_average_feature)
+	technical_features = momentum_features + moving_average_features
+	# Create a simple binary label for the most recent returns (i.e. comparing today and yesterday)
+	label_rate = get_rate_of_change(today, yesterday)
+	label = 1 if label_rate > 0 else 0
+	# Days since last all-time high
+	technical_feature_names.append("Days Since Last All-Time High")
+	days_since_all_time_high = days_since_high_map[time]
+	technical_features.append(days_since_all_time_high)
+	technical_feature_names += [f"Days Since High ({x} days)" for x in days_since_high]
+	high_values = [ohlc.high for ohlc in records[1:]]
+	for days in days_since_high:
+		values = high_values[:days]
+		index = values.index(max(values))
+		technical_features.append(index)
+	return technical_feature_names, technical_features, label
+
+def get_days_since_high_map(data: TrainingData) -> dict[pd.Timestamp, int]:
+	high_time = None
+	high = None
+	days_since_high_map = {}
+	for ohlc in data.ohlc_series.values():
+		if high is not None:
+			days_since_high_map[ohlc.time] = (ohlc.time - high_time).days
+		if high is None or ohlc.high > high:
+			high_time = ohlc.time
+			high = ohlc.high
+	return days_since_high_map
+
+def get_economic_features(time: pd.Timestamp, data: TrainingData) -> tuple[list[str], list[float]]:
 	yesterday = time - pd.Timedelta(days=1)
 	# FRED economic data
 	fred_config = [
@@ -253,46 +309,40 @@ def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timesta
 	# num_iterations_values = [75, 100, 200, 300, 500, 1000]
 	# num_iterations_values = [200, 250, 500, 750, 1000, 1250, 1500, 1750, 2000, 3000, 4000, 5000, 10000]
 	num_iterations_values = [1500]
-	inner_iterations = 1
 	for num_leaves in num_leaves_values:
 		heatmap_row = []
 		for num_iterations in num_iterations_values:
-			samples = []
-			for _ in range(inner_iterations):
-				params = {
-					"verbosity": -1,
-					"objective": "binary",
-					# "metric": ["binary_logloss", "auc"],
-					"metric": "binary_logloss",
-					# "metric": "average_precision",
-					"num_iterations": num_iterations,
-					"num_leaves": num_leaves,
-				}
-				train_dataset = lgb.Dataset(x_train, label=y_train, feature_name=feature_names)
-				validation_dataset = lgb.Dataset(x_validation, label=y_validation, feature_name=feature_names, reference=train_dataset)
-				model = lgb.train(params, train_dataset, valid_sets=[validation_dataset])
+			params = {
+				"verbosity": -1,
+				"objective": "binary",
+				# "metric": ["binary_logloss", "auc"],
+				"metric": "binary_logloss",
+				# "metric": "average_precision",
+				"num_iterations": num_iterations,
+				"num_leaves": num_leaves,
+			}
+			train_dataset = lgb.Dataset(x_train, label=y_train, feature_name=feature_names)
+			validation_dataset = lgb.Dataset(x_validation, label=y_validation, feature_name=feature_names, reference=train_dataset)
+			model = lgb.train(params, train_dataset, valid_sets=[validation_dataset])
 
-				print(f"num_leaves: {num_leaves}, num_iterations: {num_iterations}")
-				# print_metrics("Training", model, x_train, y_train)
-				print_metrics("Validation", model, x_validation, y_validation)
+			print(f"num_leaves: {num_leaves}, num_iterations: {num_iterations}")
+			# print_metrics("Training", model, x_train, y_train)
+			print_metrics("Validation", model, x_validation, y_validation)
 
-				predictions = model.predict(x_validation)
-				predictions = binary_predictions(predictions)
-				precision = precision_score(y_validation, predictions)
-				precision_values.append(precision)
-				roc_auc = roc_auc_score(y_validation, predictions)
-				roc_auc_values.append(roc_auc)
-				f1 = f1_score(y_validation, predictions)
-				f1_scores.append(f1)
-				samples.append(f1)
+			predictions = model.predict(x_validation)
+			predictions = binary_predictions(predictions)
+			precision = precision_score(y_validation, predictions)
+			precision_values.append(precision)
+			roc_auc = roc_auc_score(y_validation, predictions)
+			roc_auc_values.append(roc_auc)
+			f1 = f1_score(y_validation, predictions)
+			f1_scores.append(f1)
+			heatmap_row.append(f1)
 
-				if max_precision is None or precision > max_precision:
-					max_precision = precision
-					max_f1 = f1
-					best_model = model
-
-			sample = median(samples)
-			heatmap_row.append(sample)
+			if max_precision is None or precision > max_precision:
+				max_precision = precision
+				max_f1 = f1
+				best_model = model
 		heatmap_data.append(heatmap_row)
 
 	median_precision = median(precision_values)
@@ -315,7 +365,7 @@ def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timesta
 	shap_values = explainer(x_all)
 	shap_values.feature_names = feature_names
 	shap.summary_plot(shap_values, x_all, max_display=30, show=False, plot_size=(12, 12))
-	save_plot("shap")
+	save_plot(symbol, "SHAP")
 
 	# Show heatmap of hyperparameters
 	x_tick_labels = [str(x) for x in num_iterations_values]
@@ -325,10 +375,10 @@ def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timesta
 	plt.xlabel("Iterations")
 	plt.ylabel("Leaves")
 	plt.gca().invert_yaxis()
-	save_plot("hyperparameters")
+	save_plot(symbol, "Hyperparameters")
 
-def save_plot(name: str) -> None:
-	plot_path = os.path.join(Configuration.PLOT_DIRECTORY, f"{name}.png")
+def save_plot(symbol: str, name: str) -> None:
+	plot_path = os.path.join(Configuration.PLOT_DIRECTORY, f"{symbol} {name}.png")
 	plt.savefig(plot_path)
 	plt.close()
 

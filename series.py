@@ -65,5 +65,8 @@ class TimeSeries(Generic[T]):
 		else:
 			return values
 
+	def values(self) -> list[Generic[T]]:
+		return list(self._data.values())
+
 	def __iter__(self) -> Iterator[pd.Timestamp]:
 		return self._data.keys().__iter__()

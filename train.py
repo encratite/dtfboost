@@ -5,7 +5,7 @@ from enum import Enum
 from itertools import islice
 import sys
 import random
-from statistics import median
+from statistics import stdev, median
 from collections import defaultdict
 import pandas as pd
 import numpy as np
@@ -142,39 +142,49 @@ def get_technical_features(time: pd.Timestamp, days_since_high_map: dict[pd.Time
 		60,
 		120
 	]
-	momentum_feature_names = [f"Momentum ({x} days)" for x in momentum_offsets]
-	moving_average_feature_names = [f"Price Minus Moving Average ({x} days)" for x in moving_averages]
-	technical_feature_names = momentum_feature_names + moving_average_feature_names
+	volatility_days = [
+		5,
+		10,
+		20,
+		40,
+		60,
+		120
+	]
+	technical_feature_names = [f"Momentum ({x} days)" for x in momentum_offsets]
+	technical_feature_names += [f"Price Minus Moving Average ({x} days)" for x in moving_averages]
 	offsets += momentum_offsets
 	ohlc_count = max(max(offsets), max(moving_averages), max(days_since_high)) + 1
 	records: list[OHLC] = data.ohlc_series.get(time, count=ohlc_count)
 	close_values = [ohlc.close for ohlc in records]
+	past_close_values = close_values[1:]
 	today = close_values[0]
 	yesterday = close_values[1]
 	momentum_close_values = [close_values[i] for i in momentum_offsets]
-	momentum_features = [get_rate_of_change(yesterday, close) for close in momentum_close_values]
-	moving_average_features = []
+	technical_features = [get_rate_of_change(yesterday, close) for close in momentum_close_values]
 	for moving_average_days in moving_averages:
-		moving_average_values = close_values[1:1 + moving_average_days]
+		moving_average_values = past_close_values[:moving_average_days]
 		assert len(moving_average_values) == moving_average_days
 		# Calculate price minus simple moving average
 		moving_average = sum(moving_average_values) / moving_average_days
 		moving_average_feature = yesterday - moving_average
-		moving_average_features.append(moving_average_feature)
-	technical_features = momentum_features + moving_average_features
-	# Create a simple binary label for the most recent returns (i.e. comparing today and yesterday)
-	label_rate = get_rate_of_change(today, yesterday)
-	label = 1 if label_rate > 0 else 0
+		technical_features.append(moving_average_feature)
 	# Days since last all-time high
 	technical_feature_names.append("Days Since Last All-Time High")
 	days_since_all_time_high = days_since_high_map[time]
 	technical_features.append(days_since_all_time_high)
+	# Days since last high within the last n days
 	technical_feature_names += [f"Days Since High ({x} days)" for x in days_since_high]
 	high_values = [ohlc.high for ohlc in records[1:]]
 	for days in days_since_high:
 		values = high_values[:days]
 		index = values.index(max(values))
 		technical_features.append(index)
+	# Daily volatility
+	technical_feature_names += [f"Volatility ({x} days)" for x in volatility_days]
+	technical_features += [get_daily_volatility(past_close_values, x) for x in volatility_days]
+	# Create a simple binary label for the most recent returns (i.e. comparing today and yesterday)
+	label_rate = get_rate_of_change(today, yesterday)
+	label = 1 if label_rate > 0 else 0
 	return technical_feature_names, technical_features, label
 
 def get_days_since_high_map(data: TrainingData) -> dict[pd.Timestamp, int]:
@@ -188,6 +198,12 @@ def get_days_since_high_map(data: TrainingData) -> dict[pd.Timestamp, int]:
 			high_time = ohlc.time
 			high = ohlc.high
 	return days_since_high_map
+
+def get_daily_volatility(close_values: list[float], days: int) -> float:
+	values = close_values[:days]
+	returns = [get_rate_of_change(a, b) for a, b in zip(values, values[1:])]
+	volatility = stdev(returns)
+	return volatility
 
 def get_economic_features(time: pd.Timestamp, data: TrainingData) -> tuple[list[str], list[float]]:
 	yesterday = time - pd.Timedelta(days=1)

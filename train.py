@@ -1,8 +1,9 @@
 from typing import Final
 import os
+from pathlib import Path
 from glob import glob
 from enum import Enum
-from itertools import islice
+from itertools import islice, product
 import sys
 import random
 from statistics import stdev, mean
@@ -12,10 +13,10 @@ import numpy as np
 import numpy.typing as npt
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import roc_auc_score, f1_score, precision_score, confusion_matrix
-import seaborn
 import matplotlib.pyplot as plt
 import lightgbm as lgb
 import shap
+from tqdm import tqdm
 from series import TimeSeries
 from ohlc import OHLC
 from config import Configuration
@@ -51,7 +52,7 @@ def get_rate_of_change(new_value: float | int, old_value: float | int):
 	rate = min(rate, 1.0)
 	return rate
 
-def get_features(start: pd.Timestamp, end: pd.Timestamp, data: TrainingData, balanced_samples: bool = False, shuffle: bool = False) -> tuple[list[str], npt.NDArray[np.float64], npt.NDArray[np.int8]]:
+def get_features(start: pd.Timestamp, end: pd.Timestamp, data: TrainingData, balanced_samples: bool = False, shuffle: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
 	assert start < end
 	unbalanced_features: defaultdict[int, list[list[float]]] = defaultdict(list)
 	feature_names = []
@@ -92,7 +93,9 @@ def get_features(start: pd.Timestamp, end: pd.Timestamp, data: TrainingData, bal
 	np_features = np.array(features, dtype=np.float64)
 	labels = [x[1] for x in balanced_data]
 	np_labels = np.array(labels, dtype=np.int8)
-	return feature_names, np_features, np_labels
+	df_features = pd.DataFrame(np_features, columns=feature_names)
+	df_labels = pd.DataFrame(np_labels, columns=["Label"])
+	return df_features, df_labels
 
 def get_seasonality_features(time: pd.Timestamp) -> tuple[list[str], list[float]]:
 	seasonality_feature_names = [
@@ -362,12 +365,17 @@ def get_economic_features(time: pd.Timestamp, data: TrainingData) -> tuple[list[
 def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timestamp) -> None:
 	assert start < split < end
 	data = TrainingData(symbol)
-	feature_names, x_train, y_train = get_features(start, split, data, balanced_samples=True)
-	_, x_validation, y_validation = get_features(split, end, data)
-	scaler = StandardScaler()
-	scaler.fit(x_train)
-	x_train = scaler.transform(x_train)
-	x_validation = scaler.transform(x_validation)
+	x_train, y_train = get_features(start, split, data)
+	x_validation, y_validation = get_features(split, end, data)
+
+	# Scale features to improve model performance (or so they say)
+	if Configuration.ENABLE_SCALING:
+		scaler = StandardScaler()
+		scaler.fit(x_train)
+		x_train_scaled = scaler.transform(x_train)
+		x_validation_scaled = scaler.transform(x_validation)
+		x_train = pd.DataFrame(x_train_scaled, columns=x_train.columns)
+		x_validation = pd.DataFrame(x_validation_scaled, columns=x_validation.columns)
 
 	# Statistics
 	precision_values = []
@@ -388,53 +396,52 @@ def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timesta
 	max_depth_values = [-1]
 	num_iterations_values = [75, 100, 150, 200, 250]
 	parameter_f1: defaultdict[str, defaultdict[int, list[float]]] = defaultdict(lambda: defaultdict(list))
-	for num_leaves in num_leaves_values:
-		for min_data_in_leaf in min_data_in_leaf_values:
-			for max_depth in max_depth_values:
-				for num_iterations in num_iterations_values:
-					params = {
-						"objective": "binary",
-						# "metric": ["binary_logloss", "auc"],
-						"metric": "binary_logloss",
-						# "metric": "average_precision",
-						"verbosity": -1,
-						"num_leaves": num_leaves,
-						"min_data_in_leaf": min_data_in_leaf,
-						"max_depth": max_depth,
-						"num_iterations": num_iterations,
-					}
-					train_dataset = lgb.Dataset(x_train, label=y_train, feature_name=feature_names)
-					validation_dataset = lgb.Dataset(x_validation, label=y_validation, feature_name=feature_names, reference=train_dataset)
-					model = lgb.train(params, train_dataset, valid_sets=[validation_dataset])
+	combinations = list(product(num_leaves_values, min_data_in_leaf_values, max_depth_values, num_iterations_values))
+	for num_leaves, min_data_in_leaf, max_depth, num_iterations in tqdm(combinations, desc="Evaluating hyperparameters", colour="green"):
+		params = {
+			"objective": "binary",
+			# "metric": ["binary_logloss", "auc"],
+			"metric": "binary_logloss",
+			# "metric": "average_precision",
+			"verbosity": -1,
+			"num_leaves": num_leaves,
+			"min_data_in_leaf": min_data_in_leaf,
+			"max_depth": max_depth,
+			"num_iterations": num_iterations,
+		}
+		train_dataset = lgb.Dataset(x_train, label=y_train)
+		validation_dataset = lgb.Dataset(x_validation, label=y_validation, reference=train_dataset)
+		model = lgb.train(params, train_dataset, valid_sets=[validation_dataset])
 
-					model_parameters = {
-						"num_leaves": num_leaves,
-						"min_data_in_leaf": min_data_in_leaf,
-						"max_depth": max_depth,
-						"num_iterations": num_iterations,
-					}
-					print(model_parameters)
-					# print_metrics("Training", model, x_train, y_train)
-					print_metrics("Validation", model, x_validation, y_validation)
+		model_parameters = {
+			"num_leaves": num_leaves,
+			"min_data_in_leaf": min_data_in_leaf,
+			"max_depth": max_depth,
+			"num_iterations": num_iterations,
+		}
 
-					predictions = model.predict(x_validation)
-					predictions = binary_predictions(predictions)
-					precision = precision_score(y_validation, predictions)
-					precision_values.append(precision)
-					roc_auc = roc_auc_score(y_validation, predictions)
-					roc_auc_values.append(roc_auc)
-					f1 = f1_score(y_validation, predictions)
-					f1_scores.append(f1)
+		predictions = model.predict(x_validation)
+		predictions = binary_predictions(predictions)
+		precision = precision_score(y_validation, predictions)
+		precision_values.append(precision)
+		roc_auc = roc_auc_score(y_validation, predictions)
+		roc_auc_values.append(roc_auc)
+		f1 = f1_score(y_validation, predictions)
+		f1_scores.append(f1)
 
-					if best_model is None or f1 > best_model_f1:
-						best_model_precision = precision
-						best_model_f1 = f1
-						best_model_parameters = model_parameters
-						best_model = model
-					max_f1 = max(f1, max_f1 if max_f1 is not None else f1)
-					max_precision = max(precision, max_precision if max_precision is not None else precision)
-					for name, value in model_parameters.items():
-						parameter_f1[name][value].append(f1)
+		if best_model is None or f1 > best_model_f1:
+			best_model_precision = precision
+			best_model_f1 = f1
+			best_model_parameters = model_parameters
+			best_model = model
+		max_f1 = max(f1, max_f1 if max_f1 is not None else f1)
+		max_precision = max(precision, max_precision if max_precision is not None else precision)
+		for name, value in model_parameters.items():
+			parameter_f1[name][value].append(f1)
+
+	print(f"Number of samples in training data: {x_train.shape[0]}")
+	print(f"Number of samples in validation data: {x_validation.shape[0]}")
+	print(f"Number of features: {x_train.shape[1]}")
 
 	mean_precision = mean(precision_values)
 	random_precision = get_random_precision(y_validation)
@@ -463,33 +470,59 @@ def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timesta
 
 	# Render SHAP summary
 	explainer = shap.TreeExplainer(best_model)
-	x_all = np.concatenate((x_train, x_validation))
+	x_all = pd.concat([x_train, x_validation], ignore_index=True)
 	shap_values = explainer(x_all)
-	shap_values.feature_names = feature_names
 	shap.summary_plot(shap_values, x_all, max_display=30, show=False, plot_size=(12, 12))
-	save_plot(symbol, "SHAP")
+	save_plot(symbol, "SHAP Summary")
 
-	"""
-	# Render heatmap of hyperparameters
-	x_tick_labels = [str(x) for x in num_iterations_values]
-	y_tick_labels = [str(x) for x in num_leaves_values]
-	plt.figure(figsize=(12, 10))
-	seaborn.heatmap(heatmap_data, xticklabels=x_tick_labels, yticklabels=y_tick_labels, cbar_kws={"label": "F1 Score"})
-	plt.xlabel("Iterations")
-	plt.ylabel("Leaves")
-	plt.gca().invert_yaxis()
-	save_plot(symbol, "Hyperparameters")
-	"""
+	# Evaluate certain features only
+	selected_features = [
+		"Momentum (2 Days)",
+		"Crude Oil - West Texas Intermediate (Rate of Change)",
+		"Henry Hub Natural Gas Spot Price (Rate of Change)",
+		"Crude Oil - Brent (Rate of Change)",
+		"Global Price of Energy Index (Rate of Change)",
+		"Global Price of Natural Gas - EU (Rate of Change)",
+		"Price of Electricity (Delta)",
+		"CBOE Crude Oil ETF Volatility Index",
+		"CBOE Crude Oil ETF Volatility Index (Delta)"
+	]
+	shap.summary_plot(shap_values[:, selected_features], x_all[selected_features], show=False, plot_size=(12, 6))
+	save_plot(symbol, "SHAP Summary (selection)")
 
-def save_plot(symbol: str, name: str) -> None:
-	plot_path = os.path.join(Configuration.PLOT_DIRECTORY, f"{symbol} {name}.png")
+	# Mean feature importance values
+	df = pd.DataFrame({
+		"Feature": x_all.columns,
+		"Mean Absolute SHAP": np.mean(np.abs(shap_values.values), axis=0)
+	})
+	df = df.sort_values(by="Mean Absolute SHAP", ascending=False)
+	csv_path = os.path.join(Configuration.PLOT_DIRECTORY, symbol, f"Feature Importance.csv")
+	df.to_csv(csv_path, index=False)
+
+	# SHAP dependence plots
+	if Configuration.GENERATE_DEPENDENCE_PLOTS:
+		# Workaround for too many PyPlot figures being created for some reason
+		# The plt.close() in save_plot doesn't seem to do the trick
+		plt.rcParams["figure.max_open_warning"] = 1000
+		for feature in tqdm(range(x_all.shape[1]), desc="Generating dependence plots", colour="green"):
+			plt.figure(figsize=(14, 8))
+			shap.dependence_plot(feature, shap_values.values, x_all, show=False)
+			save_plot(symbol, f"Dependence", x_all.columns[feature])
+
+def save_plot(*tokens: str) -> None:
+	directories = tokens[:-1]
+	name = tokens[-1]
+	directory = os.path.join(Configuration.PLOT_DIRECTORY, *directories)
+	path = Path(directory)
+	path.mkdir(parents=True, exist_ok=True)
+	plot_path = os.path.join(directory, f"{name}.png")
 	plt.savefig(plot_path)
 	plt.close()
 
 def binary_predictions(predictions: npt.NDArray[np.float64]) -> npt.NDArray[np.int8]:
 	return (predictions > 0.5).astype(dtype=np.int8)
 
-def get_random_precision(y_validation: npt.NDArray[np.int8]):
+def get_random_precision(y_validation: pd.DataFrame):
 	values = [0, 1]
 	choices = random.choices(values, k=len(y_validation))
 	hits = 0
@@ -499,27 +532,13 @@ def get_random_precision(y_validation: npt.NDArray[np.int8]):
 	precision = float(hits) / len(y_validation)
 	return precision
 
-def get_label_distribution(y_validation: npt.NDArray[np.int8]) -> defaultdict[int, float]:
+def get_label_distribution(y_validation: pd.DataFrame) -> defaultdict[int, float]:
 	output = defaultdict(float)
 	for label in y_validation:
 		output[label] += 1.0
 	for label in output:
 		output[label] /= len(y_validation)
 	return output
-
-def print_metrics(title, model, x, y):
-	predictions = model.predict(x)
-	predictions = binary_predictions(predictions)
-	precision = precision_score(y, predictions)
-	roc_auc = roc_auc_score(y, predictions)
-	f1 = f1_score(y, predictions)
-	matrix = confusion_matrix(y, predictions)
-	print(f"\t{title}:")
-	print(f"\t\tPrecision: {precision:.1%}")
-	print(f"\t\tROC-AUC: {roc_auc:.3f}")
-	print(f"\t\tF1: {f1:.3f}")
-	print(f"\t\t[{matrix[0][0]:6d} {matrix[0][1]:6d}]")
-	print(f"\t\t[{matrix[1][0]:6d} {matrix[1][1]:6d}]")
 
 def main() -> None:
 	if len(sys.argv) != 5:

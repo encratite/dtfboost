@@ -16,6 +16,7 @@ from sklearn.metrics import roc_auc_score, precision_score, f1_score as get_f1_s
 import matplotlib.pyplot as plt
 import lightgbm as lgb
 from catboost import CatBoostClassifier
+from xgboost import XGBClassifier
 import shap
 from tqdm import tqdm
 from series import TimeSeries
@@ -25,6 +26,7 @@ from config import Configuration
 class Algorithm(Enum):
 	LIGHTGBM: Final[int] = 0
 	CATBOOST: Final[int] = 1
+	XGBOOST: Final[int] = 3
 
 class TrainingData:
 	ohlc_series: TimeSeries[OHLC]
@@ -436,6 +438,8 @@ def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timesta
 			stats = train_lightgbm(x_training, x_validation, y_training, y_validation)
 		case Algorithm.CATBOOST:
 			stats = train_catboost(x_training, x_validation, y_training, y_validation)
+		case Algorithm.XGBOOST:
+			stats = train_xgboost(x_training, x_validation, y_training, y_validation)
 		case _:
 			raise Exception("Unknown algorithm specified")
 
@@ -496,11 +500,12 @@ def train_lightgbm(x_training: pd.DataFrame, x_validation: pd.DataFrame, y_train
 	stats = TrainingStats(x_validation, y_validation)
 	# Iterate over hyperparameters
 	num_leaves_values = [20, 30, 40, 50]
-	min_data_in_leaf_values = [10, 15, 20, 25, 30]
+	min_data_in_leaf_values = [10, 20, 30]
 	max_depth_values = [-1]
-	num_iterations_values = [75, 100, 150, 200, 250]
-	combinations = list(product(num_leaves_values, min_data_in_leaf_values, max_depth_values, num_iterations_values))
-	for num_leaves, min_data_in_leaf, max_depth, num_iterations in tqdm(combinations, desc="Evaluating hyperparameters", colour="green"):
+	num_iterations_values = [75, 100, 150, 200, 500]
+	learning_rate_values = [0.05, 0.1]
+	combinations = list(product(num_leaves_values, min_data_in_leaf_values, max_depth_values, num_iterations_values, learning_rate_values))
+	for num_leaves, min_data_in_leaf, max_depth, num_iterations, learning_rate in tqdm(combinations, desc="Evaluating hyperparameters", colour="green"):
 		params = {
 			"objective": "binary",
 			"metric": "binary_logloss",
@@ -509,6 +514,7 @@ def train_lightgbm(x_training: pd.DataFrame, x_validation: pd.DataFrame, y_train
 			"min_data_in_leaf": min_data_in_leaf,
 			"max_depth": max_depth,
 			"num_iterations": num_iterations,
+			"learning_rate": learning_rate,
 			"seed": Configuration.SEED
 		}
 		train_dataset = lgb.Dataset(x_training, label=y_training)
@@ -519,6 +525,7 @@ def train_lightgbm(x_training: pd.DataFrame, x_validation: pd.DataFrame, y_train
 			"min_data_in_leaf": min_data_in_leaf,
 			"max_depth": max_depth,
 			"num_iterations": num_iterations,
+			"learning_rate": learning_rate,
 		}
 		stats.submit_model(model, model_parameters)
 	return stats
@@ -527,9 +534,9 @@ def train_catboost(x_training: pd.DataFrame, x_validation: pd.DataFrame, y_train
 	stats = TrainingStats(x_validation, y_validation)
 
 	# Hyperparameters
-	iterations_values = [75, 100, 200, 300]
-	depth_values = [6, 8, 10]
-	learning_rate_values = [0.1, 0.2]
+	iterations_values = [75, 100, 200, 300, 500]
+	depth_values = [6, 7, 8, 9, 10]
+	learning_rate_values = [0.01, 0.1]
 	combinations = list(product(iterations_values, depth_values, learning_rate_values))
 	for iterations, depth, learning_rate in tqdm(combinations, desc="Evaluating hyperparameters", colour="green"):
 		model = CatBoostClassifier(
@@ -539,13 +546,46 @@ def train_catboost(x_training: pd.DataFrame, x_validation: pd.DataFrame, y_train
 			loss_function="Logloss",
 			custom_metric=["AUC"],
 			random_seed=Configuration.SEED,
-			logging_level=0
+			logging_level="Silent"
 		)
 		model.fit(x_training, y_training, verbose=0)
 		model_parameters = {
 			"iterations": iterations,
 			"depth": depth,
 			"learning_rate": learning_rate
+		}
+		stats.submit_model(model, model_parameters)
+
+	return stats
+
+def train_xgboost(x_training: pd.DataFrame, x_validation: pd.DataFrame, y_training: pd.DataFrame, y_validation: pd.DataFrame) -> TrainingStats:
+	stats = TrainingStats(x_validation, y_validation)
+
+	# Hyperparameters
+	n_estimators_values = [8, 10, 20, 50, 100, 500]
+	max_depth_values = [4, 5, 6, 8, 10]
+	eta_values = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+	gamma_values = [0]
+	lambda_values = [1]
+	combinations = list(product(n_estimators_values, max_depth_values, eta_values, gamma_values, lambda_values))
+	for n_estimators, max_depth, eta, gamma, lambda_ in tqdm(combinations, desc="Evaluating hyperparameters", colour="green"):
+		model = XGBClassifier(
+			n_estimators=n_estimators,
+			max_depth=max_depth,
+			eta=eta,
+			gamma=gamma,
+			lambda_=lambda_,
+			objective="binary:logistic",
+			verbosity=0,
+			seed=Configuration.SEED,
+		)
+		model.fit(x_training, y_training)
+		model_parameters = {
+			"n_estimators": n_estimators,
+			"max_depth": max_depth,
+			"eta": eta,
+			"gamma": gamma,
+			"lambda": lambda_
 		}
 		stats.submit_model(model, model_parameters)
 

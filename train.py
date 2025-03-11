@@ -1,4 +1,4 @@
-from typing import Final
+from typing import Any, Final, cast
 import os
 from pathlib import Path
 from glob import glob
@@ -12,14 +12,19 @@ import pandas as pd
 import numpy as np
 import numpy.typing as npt
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import roc_auc_score, f1_score, precision_score, confusion_matrix
+from sklearn.metrics import roc_auc_score, precision_score, f1_score as get_f1_score
 import matplotlib.pyplot as plt
 import lightgbm as lgb
+from catboost import CatBoostClassifier
 import shap
 from tqdm import tqdm
 from series import TimeSeries
 from ohlc import OHLC
 from config import Configuration
+
+class Algorithm(Enum):
+	LIGHTGBM: Final[int] = 0
+	CATBOOST: Final[int] = 1
 
 class TrainingData:
 	ohlc_series: TimeSeries[OHLC]
@@ -35,6 +40,54 @@ class TrainingData:
 			base_name = os.path.basename(path)
 			fred_symbol = os.path.splitext(base_name)[0]
 			self.fred_data[fred_symbol] = TimeSeries.read_csv(path)
+
+class TrainingStats:
+	precision_values: list[float]
+	roc_auc_values: list[float]
+	f1_scores: list[float]
+	max_precision: float | None
+	max_f1_score: float | None
+	best_model_parameters: dict[str, int] | None
+	best_model: Any | None
+	best_model_precision: float | None
+	best_model_f1_score: float | None
+	parameter_f1_scores: defaultdict[str, defaultdict[int, list[float]]]
+	_x_validation: pd.DataFrame
+	_y_validation: pd.DataFrame
+
+	def __init__(self, x_validation: pd.DataFrame, y_validation: pd.DataFrame):
+		self.precision_values = []
+		self.roc_auc_values = []
+		self.f1_scores = []
+		self.max_precision = None
+		self.max_f1_score = None
+		self.best_model_parameters = None
+		self.best_model = None
+		self.best_model_precision = None
+		self.best_model_f1_score = None
+		self.parameter_f1_scores: defaultdict[str, defaultdict[int, list[float]]] = defaultdict(lambda: defaultdict(list))
+		self._x_validation = x_validation
+		self._y_validation = y_validation
+
+	def submit_model(self, model: Any, model_parameters: dict[str, int]):
+		predictions = model.predict(self._x_validation)
+		predictions = binary_predictions(predictions)
+		precision = precision_score(self._y_validation, predictions)
+		self.precision_values.append(precision)
+		roc_auc = roc_auc_score(self._y_validation, predictions)
+		self.roc_auc_values.append(roc_auc)
+		f1_score = get_f1_score(self._y_validation, predictions)
+		self.f1_scores.append(f1_score)
+
+		if self.best_model is None or f1_score > self.best_model_f1_score:
+			self.best_model_precision = precision
+			self.best_model_f1_score = f1_score
+			self.best_model_parameters = model_parameters
+			self.best_model = model
+		self.max_f1_score = max(f1_score, self.max_f1_score if self.max_f1_score is not None else f1_score)
+		self.max_precision = max(precision, self.max_precision if self.max_precision is not None else precision)
+		for name, value in model_parameters.items():
+			self.parameter_f1_scores[name][value].append(f1_score)
 
 class PostProcessing(Enum):
 	# Apply no post-processing, directly use values from .csv file
@@ -362,131 +415,63 @@ def get_economic_features(time: pd.Timestamp, data: TrainingData) -> tuple[list[
 				feature_names.append(f"{name} (Rate of Change)")
 	return feature_names, features
 
-def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timestamp) -> None:
+def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timestamp, algorithm: Algorithm) -> None:
 	assert start < split < end
 	data = TrainingData(symbol)
-	x_train, y_train = get_features(start, split, data)
+	x_training, y_training = get_features(start, split, data)
 	x_validation, y_validation = get_features(split, end, data)
 
 	# Scale features to improve model performance (or so they say)
 	if Configuration.ENABLE_SCALING:
 		scaler = StandardScaler()
-		scaler.fit(x_train)
-		x_train_scaled = scaler.transform(x_train)
+		scaler.fit(x_training)
+		x_train_scaled = scaler.transform(x_training)
 		x_validation_scaled = scaler.transform(x_validation)
-		x_train = pd.DataFrame(x_train_scaled, columns=x_train.columns)
+		x_training = pd.DataFrame(x_train_scaled, columns=x_training.columns)
 		x_validation = pd.DataFrame(x_validation_scaled, columns=x_validation.columns)
 
 	# Statistics
-	precision_values = []
-	roc_auc_values = []
-	f1_scores = []
-	heatmap_data = []
-	max_precision = None
-	max_f1 = None
-	best_model_parameters = None
-	best_model = None
-	best_model_precision = None
-	best_model_f1 = None
+	match algorithm:
+		case Algorithm.LIGHTGBM:
+			stats = train_lightgbm(x_training, x_validation, y_training, y_validation)
+		case Algorithm.CATBOOST:
+			stats = train_catboost(x_training, x_validation, y_training, y_validation)
+		case _:
+			raise Exception("Unknown algorithm specified")
 
-	# Iterate over hyperparameters
-	num_leaves_values = [20, 30, 40, 50]
-	min_data_in_leaf_values = [10, 15, 20, 25, 30]
-	# max_depth_values = [-1, 10, 20, 50]
-	max_depth_values = [-1]
-	num_iterations_values = [75, 100, 150, 200, 250]
-	parameter_f1: defaultdict[str, defaultdict[int, list[float]]] = defaultdict(lambda: defaultdict(list))
-	combinations = list(product(num_leaves_values, min_data_in_leaf_values, max_depth_values, num_iterations_values))
-	for num_leaves, min_data_in_leaf, max_depth, num_iterations in tqdm(combinations, desc="Evaluating hyperparameters", colour="green"):
-		params = {
-			"objective": "binary",
-			# "metric": ["binary_logloss", "auc"],
-			"metric": "binary_logloss",
-			# "metric": "average_precision",
-			"verbosity": -1,
-			"num_leaves": num_leaves,
-			"min_data_in_leaf": min_data_in_leaf,
-			"max_depth": max_depth,
-			"num_iterations": num_iterations,
-		}
-		train_dataset = lgb.Dataset(x_train, label=y_train)
-		validation_dataset = lgb.Dataset(x_validation, label=y_validation, reference=train_dataset)
-		model = lgb.train(params, train_dataset, valid_sets=[validation_dataset])
-
-		model_parameters = {
-			"num_leaves": num_leaves,
-			"min_data_in_leaf": min_data_in_leaf,
-			"max_depth": max_depth,
-			"num_iterations": num_iterations,
-		}
-
-		predictions = model.predict(x_validation)
-		predictions = binary_predictions(predictions)
-		precision = precision_score(y_validation, predictions)
-		precision_values.append(precision)
-		roc_auc = roc_auc_score(y_validation, predictions)
-		roc_auc_values.append(roc_auc)
-		f1 = f1_score(y_validation, predictions)
-		f1_scores.append(f1)
-
-		if best_model is None or f1 > best_model_f1:
-			best_model_precision = precision
-			best_model_f1 = f1
-			best_model_parameters = model_parameters
-			best_model = model
-		max_f1 = max(f1, max_f1 if max_f1 is not None else f1)
-		max_precision = max(precision, max_precision if max_precision is not None else precision)
-		for name, value in model_parameters.items():
-			parameter_f1[name][value].append(f1)
-
-	print(f"Number of samples in training data: {x_train.shape[0]}")
+	print(f"Number of samples in training data: {x_training.shape[0]}")
 	print(f"Number of samples in validation data: {x_validation.shape[0]}")
-	print(f"Number of features: {x_train.shape[1]}")
+	print(f"Number of features: {x_training.shape[1]}")
 
-	mean_precision = mean(precision_values)
+	mean_precision = mean(stats.precision_values)
 	label_distribution = get_label_distribution(y_validation)
-	mean_roc_auc = mean(roc_auc_values)
-	mean_f1 = mean(f1_scores)
+	mean_roc_auc = mean(stats.roc_auc_values)
+	mean_f1 = mean(stats.f1_scores)
 	print(f"Mean precision: {mean_precision:.1%}")
 	print(f"Positive labels: {label_distribution[1]:.1%}")
 	print(f"Negative labels: {label_distribution[0]:.1%}")
 	print(f"Mean ROC-AUC: {mean_roc_auc:.3f}")
 	print(f"Mean F1 score: {mean_f1:.3f}")
-	print(f"Maximum precision: {max_precision:.1%}")
-	print(f"Maximum F1 score: {max_f1:.3f}")
+	print(f"Maximum precision: {stats.max_precision:.1%}")
+	print(f"Maximum F1 score: {stats.max_f1_score:.3f}")
 
 	print("Mean F1 scores of hyperparameters:")
-	for name, values in parameter_f1.items():
+	for name, values in stats.parameter_f1_scores.items():
 		print(f"\t{name}:")
 		for value, f1_values in values.items():
 			print(f"\t\t{value}: {mean(f1_values):.3f}")
 
-	print(f"Best model precision: {best_model_precision:.1%}")
-	print(f"Best model F1 score: {best_model_f1:.3f}")
+	print(f"Best model precision: {stats.best_model_precision:.1%}")
+	print(f"Best model F1 score: {stats.best_model_f1_score:.3f}")
 	print("Best hyperparameters:")
-	print(best_model_parameters)
+	print(stats.best_model_parameters)
 
 	# Render SHAP summary
-	explainer = shap.TreeExplainer(best_model)
-	x_all = pd.concat([x_train, x_validation], ignore_index=True)
+	explainer = shap.TreeExplainer(stats.best_model)
+	x_all = pd.concat([x_training, x_validation], ignore_index=True)
 	shap_values = explainer(x_all)
 	shap.summary_plot(shap_values, x_all, max_display=30, show=False, plot_size=(12, 12))
 	save_plot(symbol, "SHAP Summary")
-
-	# Evaluate certain features only
-	selected_features = [
-		"Momentum (2 Days)",
-		"Crude Oil - West Texas Intermediate (Rate of Change)",
-		"Henry Hub Natural Gas Spot Price (Rate of Change)",
-		"Crude Oil - Brent (Rate of Change)",
-		"Global Price of Energy Index (Rate of Change)",
-		"Global Price of Natural Gas - EU (Rate of Change)",
-		"Price of Electricity (Delta)",
-		"CBOE Crude Oil ETF Volatility Index",
-		"CBOE Crude Oil ETF Volatility Index (Delta)"
-	]
-	shap.summary_plot(shap_values[:, selected_features], x_all[selected_features], show=False, plot_size=(12, 6))
-	save_plot(symbol, "SHAP Summary (selection)")
 
 	# Mean feature importance values
 	df = pd.DataFrame({
@@ -506,6 +491,65 @@ def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timesta
 			plt.figure(figsize=(14, 8))
 			shap.dependence_plot(feature, shap_values.values, x_all, show=False)
 			save_plot(symbol, f"Dependence", x_all.columns[feature])
+
+def train_lightgbm(x_training: pd.DataFrame, x_validation: pd.DataFrame, y_training: pd.DataFrame, y_validation: pd.DataFrame) -> TrainingStats:
+	stats = TrainingStats(x_validation, y_validation)
+	# Iterate over hyperparameters
+	num_leaves_values = [20, 30, 40, 50]
+	min_data_in_leaf_values = [10, 15, 20, 25, 30]
+	max_depth_values = [-1]
+	num_iterations_values = [75, 100, 150, 200, 250]
+	combinations = list(product(num_leaves_values, min_data_in_leaf_values, max_depth_values, num_iterations_values))
+	for num_leaves, min_data_in_leaf, max_depth, num_iterations in tqdm(combinations, desc="Evaluating hyperparameters", colour="green"):
+		params = {
+			"objective": "binary",
+			"metric": "binary_logloss",
+			"verbosity": -1,
+			"num_leaves": num_leaves,
+			"min_data_in_leaf": min_data_in_leaf,
+			"max_depth": max_depth,
+			"num_iterations": num_iterations,
+			"seed": Configuration.SEED
+		}
+		train_dataset = lgb.Dataset(x_training, label=y_training)
+		validation_dataset = lgb.Dataset(x_validation, label=y_validation, reference=train_dataset)
+		model = lgb.train(params, train_dataset, valid_sets=[validation_dataset])
+		model_parameters = {
+			"num_leaves": num_leaves,
+			"min_data_in_leaf": min_data_in_leaf,
+			"max_depth": max_depth,
+			"num_iterations": num_iterations,
+		}
+		stats.submit_model(model, model_parameters)
+	return stats
+
+def train_catboost(x_training: pd.DataFrame, x_validation: pd.DataFrame, y_training: pd.DataFrame, y_validation: pd.DataFrame) -> TrainingStats:
+	stats = TrainingStats(x_validation, y_validation)
+
+	# Hyperparameters
+	iterations_values = [75, 100, 200, 300]
+	depth_values = [6, 8, 10]
+	learning_rate_values = [0.1, 0.2]
+	combinations = list(product(iterations_values, depth_values, learning_rate_values))
+	for iterations, depth, learning_rate in tqdm(combinations, desc="Evaluating hyperparameters", colour="green"):
+		model = CatBoostClassifier(
+			iterations=iterations,
+			depth=depth,
+			learning_rate=learning_rate,
+			loss_function="Logloss",
+			custom_metric=["AUC"],
+			random_seed=Configuration.SEED,
+			logging_level=0
+		)
+		model.fit(x_training, y_training, verbose=0)
+		model_parameters = {
+			"iterations": iterations,
+			"depth": depth,
+			"learning_rate": learning_rate
+		}
+		stats.submit_model(model, model_parameters)
+
+	return stats
 
 def save_plot(*tokens: str) -> None:
 	directories = tokens[:-1]
@@ -529,14 +573,17 @@ def get_label_distribution(y_validation: pd.DataFrame) -> defaultdict[int, float
 	return output
 
 def main() -> None:
-	if len(sys.argv) != 5:
+	if len(sys.argv) != 6:
 		print("Usage:")
-		print(f"python {sys.argv[0]} <symbol> <start date> <split date> <end date>")
+		print(f"python {sys.argv[0]} <symbol> <start date> <split date> <end date> <algorithm>")
+		algorithms = ", ".join(list(Algorithm.__members__.keys()))
+		print(f"Available algorithms: {algorithms}")
 		return
 	symbol = sys.argv[1]
 	start = pd.Timestamp(sys.argv[2])
 	split = pd.Timestamp(sys.argv[3])
 	end = pd.Timestamp(sys.argv[4])
-	train(symbol, start, split, end)
+	algorithm = cast(Algorithm, Algorithm[sys.argv[5]])
+	train(symbol, start, split, end, algorithm)
 
 main()

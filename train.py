@@ -38,10 +38,12 @@ class TrainingData:
 class PostProcessing(Enum):
 	# Apply no post-processing, directly use values from .csv file
 	NOMINAL: Final[int] = 0
+	# Delta: f(t) - f(t - 1)
+	DIFFERENCE: Final[int] = 1
 	# Generate two features, the nominal value f(t) and the delta f(t) - f(t - 1)
-	NOMINAL_AND_DIFFERENCE: Final[int] = 1
+	NOMINAL_AND_DIFFERENCE: Final[int] = 2
 	# Calculate f(t) / f(t - 1) - 1 for the most recent data point
-	RATE_OF_CHANGE: Final[int] = 2
+	RATE_OF_CHANGE: Final[int] = 3
 
 def get_rate_of_change(new_value: float | int, old_value: float | int):
 	rate = float(new_value) / float(old_value) - 1.0
@@ -61,9 +63,7 @@ def get_features(start: pd.Timestamp, end: pd.Timestamp, data: TrainingData, bal
 	for time in ohlc_keys_in_range:
 		seasonality_feature_names, seasonality_features = get_seasonality_features(time)
 		technical_feature_names, technical_features, label = get_technical_features(time, days_since_high_map, data)
-		# economic_feature_names, economic_features = get_economic_features(time, data)
-		economic_feature_names = []
-		economic_features = []
+		economic_feature_names, economic_features = get_economic_features(time, data)
 		features = seasonality_features + technical_features + economic_features
 		feature_names = seasonality_feature_names + technical_feature_names + economic_feature_names
 		unbalanced_features[label].append(features)
@@ -168,7 +168,7 @@ def get_technical_features(time: pd.Timestamp, days_since_high_map: dict[pd.Time
 	technical_feature_names += days_since_x_feature_names
 	technical_features += days_since_x_features
 	# Daily volatility
-	technical_feature_names += [f"Volatility ({x} days)" for x in volatility_days]
+	technical_feature_names += [f"Volatility ({x} Days)" for x in volatility_days]
 	technical_features += [get_daily_volatility(close_values, x) for x in volatility_days]
 	# Create a simple binary label for the most recent returns (i.e. comparing today and yesterday)
 	label_rate = get_rate_of_change(today, yesterday)
@@ -290,6 +290,32 @@ def get_economic_features(time: pd.Timestamp, data: TrainingData) -> tuple[list[
 		("Trade Balance - Goods and Services", "BOPGSTB", PostProcessing.RATE_OF_CHANGE),
 		# University of Michigan: Consumer Sentiment (UMCSENT), nominal, monthly
 		("University of Michigan Consumer Sentiment", "UMCSENT", PostProcessing.NOMINAL_AND_DIFFERENCE),
+		# Crude Oil Prices: West Texas Intermediate (WTI) - Cushing, Oklahoma (DCOILWTICO), nominal, daily
+		("Crude Oil - West Texas Intermediate", "DCOILWTICO", PostProcessing.RATE_OF_CHANGE),
+		# Crude Oil Prices: Brent - Europe (DCOILBRENTEU), nominal, daily
+		("Crude Oil - Brent", "DCOILBRENTEU", PostProcessing.RATE_OF_CHANGE),
+		# US Regular All Formulations Gas Price (GASREGW), nominal, weekly
+		("Gas Price", "GASREGW", PostProcessing.RATE_OF_CHANGE),
+		# Henry Hub Natural Gas Spot Price (DHHNGSP), nominal, daily
+		("Henry Hub Natural Gas Spot Price", "DHHNGSP", PostProcessing.RATE_OF_CHANGE),
+		# Global price of LNG, Asia (PNGASJPUSDM), nominal, monthly
+		("Global Price of LNG - Asia", "PNGASJPUSDM", PostProcessing.RATE_OF_CHANGE),
+		# Average Price: Electricity per Kilowatt-Hour in U.S. City Average (APU000072610), nominal, monthly
+		("Price of Electricity", "APU000072610", PostProcessing.DIFFERENCE),
+		# Global price of Copper (PCOPPUSDM), nominal, monthly
+		("Global Price of Copper", "PCOPPUSDM", PostProcessing.RATE_OF_CHANGE),
+		# Global price of Energy index (PNRGINDEXM), nominal, monthly
+		("Global Price of Energy Index", "PNRGINDEXM", PostProcessing.RATE_OF_CHANGE),
+		# Global price of Natural gas, EU (PNGASEUUSDM), nominal, monthly
+		("Global Price of Natural Gas - EU", "PNGASEUUSDM", PostProcessing.RATE_OF_CHANGE),
+		# Global price of Aluminum (PALUMUSDM), nominal, monthly
+		("Global Price of Aluminum", "PALUMUSDM", PostProcessing.RATE_OF_CHANGE),
+		# Global price of Corn (PMAIZMTUSDM), nominal, monthly
+		("Global Price of Corn", "PMAIZMTUSDM", PostProcessing.RATE_OF_CHANGE),
+		# Global price of Soybeans (PSOYBUSDM), nominal, monthly
+		("Global Price of Soybeans", "PSOYBUSDM", PostProcessing.RATE_OF_CHANGE),
+		# Global price of Food index (PFOODINDEXM), nominal, monthly
+		("Global Price of Food index", "PFOODINDEXM", PostProcessing.RATE_OF_CHANGE),
 	]
 	feature_names = []
 	features = []
@@ -300,6 +326,11 @@ def get_economic_features(time: pd.Timestamp, data: TrainingData) -> tuple[list[
 				value = data.fred_data[symbol].get(yesterday)
 				features.append(value)
 				feature_names.append(name)
+			case PostProcessing.DIFFERENCE:
+				values = data.fred_data[symbol].get(yesterday, count=2)
+				difference = values[0] - values[1]
+				features.append(difference)
+				feature_names.append(f"{name} (Delta)")
 			case PostProcessing.NOMINAL_AND_DIFFERENCE:
 				values = data.fred_data[symbol].get(yesterday, count=2)
 				nominal_value = values[0]

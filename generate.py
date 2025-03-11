@@ -1,7 +1,9 @@
 import os
 from collections import defaultdict
-import pandas as pd
 from typing import Any, cast
+
+import pandas as pd
+
 from config import Configuration
 from globex import GlobexCode
 from ohlc import OHLC

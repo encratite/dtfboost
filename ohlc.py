@@ -1,5 +1,7 @@
 from typing import Any
+
 import pandas as pd
+
 from globex import GlobexCode
 
 class OHLC:

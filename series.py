@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 from typing import cast, TypeVar, Generic, Iterator
-from sortedcontainers import SortedDict
+
 import pandas as pd
+from sortedcontainers import SortedDict
+
 from ohlc import OHLC
 
 T = TypeVar("T")

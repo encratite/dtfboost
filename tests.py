@@ -1,6 +1,8 @@
-from typing import Any
 import os
+from typing import Any
+
 import pandas as pd
+
 from config import Configuration
 from series import TimeSeries
 

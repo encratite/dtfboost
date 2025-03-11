@@ -444,12 +444,10 @@ def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timesta
 	print(f"Number of features: {x_train.shape[1]}")
 
 	mean_precision = mean(precision_values)
-	random_precision = get_random_precision(y_validation)
 	label_distribution = get_label_distribution(y_validation)
 	mean_roc_auc = mean(roc_auc_values)
 	mean_f1 = mean(f1_scores)
 	print(f"Mean precision: {mean_precision:.1%}")
-	print(f"Random precision: {random_precision:.1%}")
 	print(f"Positive labels: {label_distribution[1]:.1%}")
 	print(f"Negative labels: {label_distribution[0]:.1%}")
 	print(f"Mean ROC-AUC: {mean_roc_auc:.3f}")
@@ -522,22 +520,12 @@ def save_plot(*tokens: str) -> None:
 def binary_predictions(predictions: npt.NDArray[np.float64]) -> npt.NDArray[np.int8]:
 	return (predictions > 0.5).astype(dtype=np.int8)
 
-def get_random_precision(y_validation: pd.DataFrame):
-	values = [0, 1]
-	choices = random.choices(values, k=len(y_validation))
-	hits = 0
-	for a, b in zip(choices, y_validation):
-		if a == b:
-			hits += 1
-	precision = float(hits) / len(y_validation)
-	return precision
-
 def get_label_distribution(y_validation: pd.DataFrame) -> defaultdict[int, float]:
 	output = defaultdict(float)
-	for label in y_validation:
+	for label in y_validation.iloc[:, 0]:
 		output[label] += 1.0
 	for label in output:
-		output[label] /= len(y_validation)
+		output[label] /= y_validation.shape[0]
 	return output
 
 def main() -> None:

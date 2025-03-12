@@ -36,7 +36,14 @@ def generate_continuous_contract(symbol: str) -> None:
 		current_ohlc = next((x for x in records if x.globex_code == current_globex_code), None)
 		if current_ohlc is None:
 			raise Exception(f"Unable to find a record for current contract {current_globex_code} at {time.date()}")
-		filtered_records: list[OHLC] = list(filter(lambda x: x.globex_code > current_globex_code and x.open_interest > current_ohlc.open_interest > 0, records))
+		_, last_contract_day = contract_ranges[current_globex_code]
+
+		def is_rollover_target(x: OHLC) -> bool:
+			last_day = time == last_contract_day
+			enough_open_interest = x.open_interest > current_ohlc.open_interest > 0
+			return x.globex_code > current_globex_code and (last_day or enough_open_interest)
+
+		filtered_records = [x for x in records if is_rollover_target(x)]
 		offset = 0
 		if len(filtered_records) > 0:
 			new_ohlc = get_ohlc_by_open_interest(filtered_records)
@@ -79,7 +86,10 @@ def main() -> None:
 		"GC",
 		"CL",
 		"NG",
-		"ZC"
+		"ZC",
+		"ZN",
+		"ZT",
+		"VI",
 	]
 
 	for symbol in symbols:

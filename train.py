@@ -108,14 +108,15 @@ def main() -> None:
 	if len(sys.argv) != 6:
 		print("Usage:")
 		print(f"python {sys.argv[0]} <symbol> <start date> <split date> <end date> <algorithm>")
-		algorithms = ", ".join(list(Algorithm.__members__.keys()))
-		print(f"Available algorithms: {algorithms}")
+		algorithms = [x.lower() for x in Algorithm.__members__.keys()]
+		algorithms_string = ", ".join(algorithms)
+		print(f"Available algorithms: {algorithms_string}")
 		return
 	symbol = sys.argv[1]
 	start = pd.Timestamp(sys.argv[2])
 	split = pd.Timestamp(sys.argv[3])
 	end = pd.Timestamp(sys.argv[4])
-	algorithm = cast(Algorithm, Algorithm[sys.argv[5]])
+	algorithm = cast(Algorithm, Algorithm[sys.argv[5].upper()])
 	train(symbol, start, split, end, algorithm)
 
 main()

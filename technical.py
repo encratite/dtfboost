@@ -1,9 +1,11 @@
+import os
 from statistics import stdev
 
 import pandas as pd
 
 from ohlc import OHLC
 from data import TrainingData
+from config import Configuration
 
 def get_technical_features(time: pd.Timestamp, days_since_high_map: dict[pd.Timestamp, int], data: TrainingData) -> tuple[list[str], list[float], int]:
 	# Offset 0 for the current day, offset 1 for yesterday, to calculate the binary label p(t) / p(t - 1) > 1
@@ -123,3 +125,6 @@ def get_daily_volatility(close_values: list[float], days: int) -> float:
 	returns = [get_rate_of_change(a, b) for a, b in zip(values, values[1:])]
 	volatility = stdev(returns)
 	return volatility
+
+def get_barchart_path(symbol: str) -> str:
+	return os.path.join(Configuration.BARCHART_DIRECTORY, f"{symbol}.D1.csv")

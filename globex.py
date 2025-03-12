@@ -2,17 +2,19 @@ from __future__ import annotations
 
 import re
 from functools import total_ordering
+from typing import Final
 
 @total_ordering
 class GlobexCode:
+	GLOBEX_CODE_PATTERN: Final[re.Pattern] = re.compile("^([A-Z0-9]{2,})([FGHJKMNQUVXZ])([0-9]{2})$")
+
 	symbol: str
 	root: str
 	month: str
 	year: int
 
 	def __init__(self, symbol):
-		pattern = re.compile("^([A-Z0-9]{2,})([FGHJKMNQUVXZ])([0-9]{2})$")
-		match = pattern.match(symbol)
+		match = self.GLOBEX_CODE_PATTERN.match(symbol)
 		if match is None:
 			raise Exception("Invalid Globex code")
 		self.symbol = symbol
@@ -24,6 +26,11 @@ class GlobexCode:
 		else:
 			year += 2000
 		self.year = year
+
+	@staticmethod
+	def is_globex_code(symbol: str) -> bool:
+		match = GlobexCode.GLOBEX_CODE_PATTERN.match(symbol)
+		return match is not None
 
 	def _get_tuple(self) -> tuple[str, int, str]:
 		return self.root, self.year, self.month

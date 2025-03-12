@@ -17,7 +17,7 @@ class TimeSeries(Generic[T]):
 
 	@staticmethod
 	def read_csv(path: str) -> TimeSeries[float]:
-		df = pd.read_csv(path, parse_dates=[0])
+		df = pd.read_csv(path, parse_dates=[0], date_format="%Y-%m-%d")
 		# Some FRED data files like T10Y2Y lack numeric entries, skip them
 		# This causes the rate of change and difference calculations to use the preceding value instead
 		df.dropna(how="any")
@@ -31,7 +31,7 @@ class TimeSeries(Generic[T]):
 
 	@staticmethod
 	def read_ohlc_csv(path: str) -> TimeSeries[OHLC]:
-		df = pd.read_csv(path, parse_dates=[0])
+		df = pd.read_csv(path)
 		data = SortedDict()
 		for row in df.itertuples(index=False):
 			ohlc = OHLC(row)

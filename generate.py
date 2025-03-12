@@ -7,9 +7,10 @@ import pandas as pd
 from config import Configuration
 from globex import GlobexCode
 from ohlc import OHLC
+from technical import get_barchart_path
 
 def generate_continuous_contract(symbol: str) -> None:
-	input_path = os.path.join(Configuration.BARCHART_DIRECTORY, f"{symbol}.D1.csv")
+	input_path = get_barchart_path(symbol)
 	print(f"Processing {input_path}")
 	df: pd.DataFrame = pd.read_csv(input_path, parse_dates=["time"])
 	contracts_per_day: dict[pd.Timestamp, list[OHLC]] = defaultdict(list)

@@ -48,9 +48,9 @@ def train_catboost(x_training: pd.DataFrame, x_validation: pd.DataFrame, y_train
 	results = TrainingResults(x_validation, y_validation)
 
 	# Evaluate hyperparameters
-	iterations_values = [75, 100, 200, 300, 500]
-	depth_values = [6, 7, 8, 9, 10]
-	learning_rate_values = [0.01, 0.1]
+	iterations_values = [100, 500]
+	depth_values = [6, 8, 10]
+	learning_rate_values = [0.001, 0.01, 0.1]
 	combinations = list(product(iterations_values, depth_values, learning_rate_values))
 	for iterations, depth, learning_rate in tqdm(combinations, desc="Evaluating hyperparameters", colour="green"):
 		model = CatBoostClassifier(

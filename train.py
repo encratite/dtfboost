@@ -1,23 +1,22 @@
 import random
 import sys
-from collections import defaultdict
-from itertools import islice
+from itertools import islice, combinations
 from typing import cast
 
-import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
+from tqdm import tqdm
 
 from boosting import train_lightgbm, train_catboost, train_xgboost
-from config import Configuration
 from data import TrainingData
 from economic import get_economic_features
 from enums import Algorithm, FeatureCategory
-from technical import get_technical_features, get_days_since_high_map
-from stats import generate_stats
 from feature import Feature
+from stats import generate_stats
+from technical import get_technical_features, get_days_since_high_map
+from results import TrainingResults
+from config import Configuration
 
-def get_features(start: pd.Timestamp, end: pd.Timestamp, data: TrainingData) -> tuple[pd.DataFrame, pd.DataFrame]:
+def get_features(start: pd.Timestamp, end: pd.Timestamp, data: TrainingData, feature_categories: frozenset[FeatureCategory] | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
 	assert start < end
 
 	feature_names = None
@@ -35,9 +34,14 @@ def get_features(start: pd.Timestamp, end: pd.Timestamp, data: TrainingData) -> 
 		features += technical_features
 		labels.append(label)
 		features += get_economic_features(time, data)
-		if feature_names is None:
+		if feature_categories is None:
 			feature_names = [x.name for x in features]
-		feature_values = [x.value for x in features]
+			feature_values = [x.value for x in features]
+		else:
+			filtered_features = [x for x in features if x.category in feature_categories]
+			if feature_names is None:
+				feature_names = [x.name for x in filtered_features]
+			feature_values = [x.value for x in filtered_features]
 		all_features.append(feature_values)
 
 	df_features = pd.DataFrame(all_features, columns=feature_names)
@@ -56,30 +60,44 @@ def get_seasonality_features(time: pd.Timestamp) -> list[Feature]:
 def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timestamp, algorithm: Algorithm) -> None:
 	assert start < split < end
 	data = TrainingData(symbol)
-	x_training, y_training = get_features(start, split, data)
-	x_validation, y_validation = get_features(split, end, data)
+	results = TrainingResults()
+	if Configuration.EVALUATE_FEATURE_CATEGORIES:
+		feature_category_enums = list(FeatureCategory)
+		enum_subsets = []
+		for i in range(len(feature_category_enums)):
+			for x in combinations(feature_category_enums, i + 1):
+				enum_subsets.append(frozenset(x))
+		enum_subsets = random.sample(enum_subsets, k=500)
+		for feature_categories in tqdm(enum_subsets, desc="Evaluating feature categories", colour="green"):
+			x_training, y_training = get_features(start, split, data, feature_categories)
+			x_validation, y_validation = get_features(split, end, data, feature_categories)
+			execute_algorithm(x_training, x_validation, y_training, y_validation, algorithm, False, feature_categories, results)
+		generate_stats(symbol, results, feature_categories=True)
+	else:
+		x_training, y_training = get_features(start, split, data)
+		x_validation, y_validation = get_features(split, end, data)
+		execute_algorithm(x_training, x_validation, y_training, y_validation, algorithm, True, None, results)
+		generate_stats(symbol, results, hyperparameters=True)
 
-	# Scale features to improve model performance (or so they say)
-	if Configuration.ENABLE_SCALING:
-		scaler = StandardScaler()
-		scaler.fit(x_training)
-		x_train_scaled = scaler.transform(x_training)
-		x_validation_scaled = scaler.transform(x_validation)
-		x_training = pd.DataFrame(x_train_scaled, columns=x_training.columns)
-		x_validation = pd.DataFrame(x_validation_scaled, columns=x_validation.columns)
-
-	# Train models
+def execute_algorithm(
+		x_training: pd.DataFrame,
+		x_validation: pd.DataFrame,
+		y_training: pd.DataFrame,
+		y_validation: pd.DataFrame,
+		algorithm: Algorithm,
+		optimize: bool,
+		feature_categories: frozenset[FeatureCategory] | None,
+		results: TrainingResults
+) -> None:
 	match algorithm:
 		case Algorithm.LIGHTGBM:
-			results = train_lightgbm(x_training, x_validation, y_training, y_validation)
+			train_lightgbm(x_training, x_validation, y_training, y_validation, optimize, feature_categories, results)
 		case Algorithm.CATBOOST:
-			results = train_catboost(x_training, x_validation, y_training, y_validation)
+			train_catboost(x_training, x_validation, y_training, y_validation, optimize, feature_categories, results)
 		case Algorithm.XGBOOST:
-			results = train_xgboost(x_training, x_validation, y_training, y_validation)
+			train_xgboost(x_training, x_validation, y_training, y_validation, optimize, feature_categories, results)
 		case _:
 			raise Exception("Unknown algorithm specified")
-
-	generate_stats(symbol, x_training, x_validation, y_validation, results)
 
 def main() -> None:
 	if len(sys.argv) != 6:

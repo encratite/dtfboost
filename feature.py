@@ -9,3 +9,6 @@ class Feature:
 		self.name = name
 		self.category = category
 		self.value = value
+
+	def __repr__(self) -> str:
+		return f"{self.name}: {self.value} [{self.category}]"

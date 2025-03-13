@@ -26,6 +26,10 @@ def get_technical_features(time: pd.Timestamp, days_since_high_map: dict[pd.Time
 		200,
 		250
 	]
+	lagged_momentum_days = [
+		(25, 50),
+		(100, 250)
+	]
 	moving_average_days = [
 		5,
 		10,
@@ -48,28 +52,28 @@ def get_technical_features(time: pd.Timestamp, days_since_high_map: dict[pd.Time
 	# Technically days_since_x should be part of this calculation
 	ohlc_count = max(max(offsets), max(moving_average_days)) + 1
 	records: list[OHLC] = data.ohlc_series.get(time, count=ohlc_count)
-	today = records[0].close
+	today = records[0]
 	# Truncate records to prevent any further access to data from the future
 	records = records[1:]
 	close_values = [ohlc.close for ohlc in records]
-	yesterday = close_values[0]
+	yesterday = records[0]
 	technical_features: list[Feature] = []
 
-	# Momentum features
+	# Price momentum features
 	for days in momentum_days:
 		close = close_values[days - 1]
-		feature_value = get_rate_of_change(yesterday, close)
+		feature_value = get_rate_of_change(yesterday.close, close)
 		feature_name = f"Momentum ({days} Days)"
 		feature = Feature(feature_name, FeatureCategory.TECHNICAL_MOMENTUM, feature_value)
 		technical_features.append(feature)
 
-	# Price minus moving average featueres
+	# Price minus moving average features
 	for days in moving_average_days:
 		moving_average_values = close_values[:days]
 		assert len(moving_average_values) == days
 		# Calculate price minus simple moving average
 		moving_average = sum(moving_average_values) / days
-		feature_value = yesterday - moving_average
+		feature_value = yesterday.close - moving_average
 		feature_name = f"Price Minus Moving Average ({days} Days)"
 		feature = Feature(feature_name, FeatureCategory.TECHNICAL_MOVING_AVERAGE, feature_value)
 		technical_features.append(feature)
@@ -83,8 +87,40 @@ def get_technical_features(time: pd.Timestamp, days_since_high_map: dict[pd.Time
 		feature = Feature(feature_name, FeatureCategory.TECHNICAL_VOLATILITY, feature_value)
 		technical_features.append(feature)
 
+	# Volume/open interest momentum features
+	# This is problematic because lots of OHLC sources don't consolidate these values until after 4 PM ET
+	for days in momentum_days:
+		record = records[days - 1]
+		feature_value = get_rate_of_change(yesterday.volume, record.volume)
+		feature_name = f"Volume Momentum ({days} Days)"
+		feature = Feature(feature_name, FeatureCategory.TECHNICAL_VOLUME, feature_value)
+		technical_features.append(feature)
+		feature_value = get_rate_of_change(yesterday.open_interest, record.open_interest)
+		feature_name = f"Open Interest ({days} Days)"
+		feature = Feature(feature_name, FeatureCategory.TECHNICAL_OPEN_INTEREST, feature_value)
+		technical_features.append(feature)
+
+	# Experimental indicators
+	feature_name = f"Close-Open"
+	feature_value = get_rate_of_change(yesterday.close, yesterday.open)
+	feature = Feature(feature_name, FeatureCategory.TECHNICAL_EXPERIMENTAL, feature_value)
+	technical_features.append(feature)
+
+	feature_name = f"Close-High-Low"
+	feature_value = yesterday.close / (yesterday.high - yesterday.low)
+	feature = Feature(feature_name, FeatureCategory.TECHNICAL_EXPERIMENTAL, feature_value)
+	technical_features.append(feature)
+
+	for lag1, lag2 in lagged_momentum_days:
+		close1 = close_values[lag1 - 1]
+		close2 = close_values[lag2 - 1]
+		feature_value = get_rate_of_change(close1, close2)
+		feature_name = f"Lagged Momentum ({lag1}, {lag2} Days)"
+		feature = Feature(feature_name, FeatureCategory.TECHNICAL_EXPERIMENTAL, feature_value)
+		technical_features.append(feature)
+
 	# Create a simple binary label for the most recent returns (i.e. comparing today and yesterday)
-	label_rate = get_rate_of_change(today, yesterday)
+	label_rate = get_rate_of_change(today.close, yesterday.close)
 	label = 1 if label_rate > 0 else 0
 	return technical_features, label
 

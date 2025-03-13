@@ -3,7 +3,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import roc_auc_score, precision_score, f1_score as get_f1_score
+from sklearn.metrics import roc_auc_score, precision_score, f1_score as get_f1_score, confusion_matrix
 
 from enums import FeatureCategory
 
@@ -13,16 +13,20 @@ class TrainingResults:
 	f1_scores: list[float]
 	max_precision: float | None
 	max_f1_score: float | None
+	max_roc_auc: float | None
 	best_model_parameters: dict[str, int] | None
 	best_model: Any | None
 	best_model_precision: float | None
+	best_model_roc_auc: float | None
 	best_model_f1_score: float | None
+	best_model_confusion_matrix: Any | None
 	best_model_x_training: pd.DataFrame | None
 	best_model_y_training: pd.DataFrame | None
 	best_model_x_validation: pd.DataFrame | None
 	best_model_y_validation: pd.DataFrame | None
+	best_model_predictions: Any | None
 	best_feature_categories: frozenset[FeatureCategory] | None
-	parameter_f1_scores: defaultdict[str, defaultdict[int, list[float]]]
+	parameter_scores: defaultdict[str, defaultdict[int, list[tuple[float, float]]]]
 	feature_category_f1_scores: defaultdict[frozenset[FeatureCategory], list[float]]
 
 	def __init__(self):
@@ -30,17 +34,21 @@ class TrainingResults:
 		self.roc_auc_values = []
 		self.f1_scores = []
 		self.max_precision = None
+		self.max_roc_auc = None
 		self.max_f1_score = None
 		self.best_model_parameters = None
 		self.best_model = None
 		self.best_model_precision = None
+		self.best_model_roc_auc = None
 		self.best_model_f1_score = None
+		self.best_model_confusion_matrix = None
 		self.best_model_x_training = None
 		self.best_model_y_training = None
 		self.best_model_x_validation = None
 		self.best_model_y_validation = None
+		self.best_model_predictions = None
 		self.best_feature_categories = None
-		self.parameter_f1_scores = defaultdict(lambda: defaultdict(list))
+		self.parameter_scores = defaultdict(lambda: defaultdict(list))
 		self.feature_category_f1_scores = defaultdict(list)
 
 	def submit_model(self, x_training: pd.DataFrame, y_training: pd.DataFrame, x_validation: pd.DataFrame, y_validation: pd.DataFrame, model: Any, model_parameters: dict[str, int], feature_categories: frozenset[FeatureCategory]):
@@ -57,14 +65,23 @@ class TrainingResults:
 			self.best_model_parameters = model_parameters
 			self.best_model = model
 			self.best_model_precision = precision
+			self.best_model_roc_auc = roc_auc
 			self.best_model_f1_score = f1_score
+			self.best_model_confusion_matrix = confusion_matrix(y_validation, predictions)
 			self.best_model_x_training = x_training
 			self.best_model_y_training = y_training
 			self.best_model_x_validation = x_validation
 			self.best_model_y_validation = y_validation
+			self.best_model_predictions = predictions
 			self.best_feature_categories = feature_categories
+		self.max_roc_auc = max(roc_auc, self.max_roc_auc if self.max_roc_auc is not None else roc_auc)
 		self.max_f1_score = max(f1_score, self.max_f1_score if self.max_f1_score is not None else f1_score)
 		self.max_precision = max(precision, self.max_precision if self.max_precision is not None else precision)
+		positive_predictions = 0
+		for label in predictions:
+			if label == 1:
+				positive_predictions += 1
+		positive_prediction_rate = float(positive_predictions) / len(predictions)
 		for name, value in model_parameters.items():
-			self.parameter_f1_scores[name][value].append(f1_score)
+			self.parameter_scores[name][value].append((f1_score, positive_prediction_rate))
 		self.feature_category_f1_scores[feature_categories].append(f1_score)

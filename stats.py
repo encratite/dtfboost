@@ -26,24 +26,41 @@ def generate_stats(
 	print(f"Positive labels: {label_distribution[1]:.1%}")
 	print(f"Negative labels: {label_distribution[0]:.1%}")
 
-	mean_precision = mean(results.precision_values)
-	mean_roc_auc = mean(results.roc_auc_values)
-	mean_f1 = mean(results.f1_scores)
-	print(f"Mean precision: {mean_precision:.1%}")
-	print(f"Mean ROC-AUC: {mean_roc_auc:.3f}")
-	print(f"Mean F1 score: {mean_f1:.3f}")
-	print(f"Maximum precision: {results.max_precision:.1%}")
-	print(f"Maximum F1 score: {results.max_f1_score:.3f}")
-
 	if hyperparameters:
 		print("Mean F1 scores of hyperparameters:")
-		for name, values in results.parameter_f1_scores.items():
+		for name, values in results.parameter_scores.items():
 			print(f"\t{name}:")
-			for value, f1_values in values.items():
-				print(f"\t\t{value}: {mean(f1_values):.3f}")
+			for value, score_tuples in values.items():
+				f1_values = [x[0] for x in score_tuples]
+				positive_prediction_rates = [x[1] for x in score_tuples]
+				print(f"\t\t{value}: {mean(f1_values):.3f} ({min(positive_prediction_rates):.1%} - {max(positive_prediction_rates):.1%}, mean {mean(positive_prediction_rates):.1%})")
 
 		print(f"Best model precision: {results.best_model_precision:.1%}")
+		print(f"Best model ROC-AUC: {results.best_model_roc_auc:.3f}")
 		print(f"Best model F1 score: {results.best_model_f1_score:.3f}")
+
+		matrix = results.best_model_confusion_matrix
+		print(f"\t\t[{matrix[0][0]:6d} {matrix[0][1]:6d}]")
+		print(f"\t\t[{matrix[1][0]:6d} {matrix[1][1]:6d}]")
+
+		prediction_distribution = defaultdict(int)
+		for label in results.best_model_predictions:
+			prediction_distribution[label] += 1
+		print(f"Positive predictions: {float(prediction_distribution[1]) / len(results.best_model_predictions):.1%}")
+		print(f"Negative predictions: {float(prediction_distribution[0]) / len(results.best_model_predictions):.1%}")
+
+		mean_precision = mean(results.precision_values)
+		mean_roc_auc = mean(results.roc_auc_values)
+		mean_f1 = mean(results.f1_scores)
+
+		print(f"Maximum precision: {results.max_precision:.1%}")
+		print(f"Maximum ROC-AUC: {results.max_roc_auc:.3f}")
+		print(f"Maximum F1 score: {results.max_f1_score:.3f}")
+
+		print(f"Mean precision: {mean_precision:.1%}")
+		print(f"Mean ROC-AUC: {mean_roc_auc:.3f}")
+		print(f"Mean F1 score: {mean_f1:.3f}")
+
 		print("Best hyperparameters:")
 		print(results.best_model_parameters)
 

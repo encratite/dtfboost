@@ -17,14 +17,19 @@ class PostProcessing(Enum):
 	RATE_OF_CHANGE: Final[int] = 3
 
 class FeatureCategory(Enum):
-	SEASONALITY: Final[int] = 0
-	TECHNICAL_MOMENTUM: Final[int] = 1
-	TECHNICAL_MOVING_AVERAGE: Final[int] = 2
-	TECHNICAL_DAYS_SINCE_X: Final[int] = 3
-	TECHNICAL_VOLATILITY: Final[int] = 4
-	ECONOMIC_INTEREST_RATES: Final[int] = 5
-	ECONOMIC_GENERAL: Final[int] = 6
-	ECONOMIC_RESOURCES: Final[int] = 7
-	ECONOMIC_VOLATILITY: Final[int] = 8
-	ECONOMIC_INDEXES: Final[int] = 9
-	ECONOMIC_CURRENCIES: Final[int] = 10
+	SEASONALITY: Final[int] = 1
+
+	TECHNICAL_MOMENTUM: Final[int] = 10
+	TECHNICAL_VOLUME: Final[int] = 11
+	TECHNICAL_OPEN_INTEREST: Final[int] = 12
+	TECHNICAL_MOVING_AVERAGE: Final[int] = 13
+	TECHNICAL_DAYS_SINCE_X: Final[int] = 14
+	TECHNICAL_VOLATILITY: Final[int] = 15
+	TECHNICAL_EXPERIMENTAL: Final[int] = 16
+
+	ECONOMIC_INTEREST_RATES: Final[int] = 20
+	ECONOMIC_GENERAL: Final[int] = 21
+	ECONOMIC_RESOURCES: Final[int] = 22
+	ECONOMIC_VOLATILITY: Final[int] = 23
+	ECONOMIC_INDEXES: Final[int] = 24
+	ECONOMIC_CURRENCIES: Final[int] = 25

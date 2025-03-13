@@ -1,4 +1,3 @@
-import random
 import sys
 from itertools import islice, combinations
 from typing import cast
@@ -7,14 +6,14 @@ import pandas as pd
 from tqdm import tqdm
 
 from boosting import train_lightgbm, train_catboost, train_xgboost
+from config import Configuration
 from data import TrainingData
 from economic import get_economic_features
 from enums import Algorithm, FeatureCategory
 from feature import Feature
+from results import TrainingResults
 from stats import generate_stats
 from technical import get_technical_features, get_days_since_high_map
-from results import TrainingResults
-from config import Configuration
 
 def get_features(start: pd.Timestamp, end: pd.Timestamp, data: TrainingData, feature_categories: frozenset[FeatureCategory] | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
 	assert start < end
@@ -67,16 +66,31 @@ def train(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timesta
 		for i in range(len(feature_category_enums)):
 			for x in combinations(feature_category_enums, i + 1):
 				enum_subsets.append(frozenset(x))
-		enum_subsets = random.sample(enum_subsets, k=500)
 		for feature_categories in tqdm(enum_subsets, desc="Evaluating feature categories", colour="green"):
 			x_training, y_training = get_features(start, split, data, feature_categories)
 			x_validation, y_validation = get_features(split, end, data, feature_categories)
 			execute_algorithm(x_training, x_validation, y_training, y_validation, algorithm, False, feature_categories, results)
 		generate_stats(symbol, results, feature_categories=True)
 	else:
-		x_training, y_training = get_features(start, split, data)
-		x_validation, y_validation = get_features(split, end, data)
-		execute_algorithm(x_training, x_validation, y_training, y_validation, algorithm, True, None, results)
+		feature_categories = frozenset([
+			FeatureCategory.SEASONALITY,
+			FeatureCategory.TECHNICAL_MOMENTUM,
+			FeatureCategory.TECHNICAL_MOVING_AVERAGE,
+			FeatureCategory.TECHNICAL_VOLUME,
+			FeatureCategory.TECHNICAL_OPEN_INTEREST,
+			FeatureCategory.TECHNICAL_DAYS_SINCE_X,
+			FeatureCategory.TECHNICAL_VOLATILITY,
+			FeatureCategory.TECHNICAL_EXPERIMENTAL,
+			FeatureCategory.ECONOMIC_INTEREST_RATES,
+			FeatureCategory.ECONOMIC_GENERAL,
+			FeatureCategory.ECONOMIC_RESOURCES,
+			FeatureCategory.ECONOMIC_VOLATILITY,
+			FeatureCategory.ECONOMIC_INDEXES,
+			FeatureCategory.ECONOMIC_CURRENCIES,
+		])
+		x_training, y_training = get_features(start, split, data, feature_categories)
+		x_validation, y_validation = get_features(split, end, data, feature_categories)
+		execute_algorithm(x_training, x_validation, y_training, y_validation, algorithm, True, feature_categories, results)
 		generate_stats(symbol, results, hyperparameters=True)
 
 def execute_algorithm(

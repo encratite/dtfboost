@@ -72,8 +72,8 @@ def train_catboost(
 	if optimize:
 		# iterations_values = [1000, 2000, 5000]
 		iterations_values = [100]
-		depth_values = [7]
-		learning_rate_values = [0.03]
+		depth_values = [3]
+		learning_rate_values = [0.02]
 	else:
 		iterations_values = [100]
 		depth_values = [7]
@@ -88,6 +88,9 @@ def train_catboost(
 			custom_metric=["AUC"],
 			random_seed=Configuration.SEED,
 			logging_level="Silent",
+			l2_leaf_reg=8,
+			subsample=0.7,
+			bootstrap_type="Bernoulli",
 			allow_writing_files=False
 		)
 		training_pool = Pool(data=x_training, label=y_training)

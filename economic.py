@@ -12,7 +12,7 @@ def get_economic_features(time: pd.Timestamp, data: TrainingData) -> list[Featur
 	features += get_barchart_features(yesterday, data)
 	return features
 
-def get_barchart_features(yesterday: pd.Timestamp, data: TrainingData) -> list[Feature]:
+def get_barchart_features(time: pd.Timestamp, data: TrainingData) -> list[Feature]:
 	# Big stock indexes and currency pairs that do not require any additional post-processing
 	symbols = [
 		("DAX Stock Index", "$DAX", FeatureCategory.ECONOMIC_INDEXES),
@@ -32,8 +32,16 @@ def get_barchart_features(yesterday: pd.Timestamp, data: TrainingData) -> list[F
 	features = []
 	for feature_name, symbol, feature_category in symbols:
 		ohlc_series = data.barchart_data[symbol]
-		records = ohlc_series.get(yesterday, count=2)
+		records = ohlc_series.get(time, count=2)
 		feature_value = get_rate_of_change(records[0].close, records[1].close)
 		feature = Feature(feature_name, feature_category, feature_value)
 		features.append(feature)
+
+		days_values = [20, 40, 120, 250]
+		for days in days_values:
+			then = time - pd.Timedelta(days=days)
+			then_record = ohlc_series.get(then)
+			feature_value = get_rate_of_change(records[0].close, then_record.close)
+			feature = Feature(f"{feature_name} ({days} Days)", feature_category, feature_value)
+			features.append(feature)
 	return features

@@ -20,7 +20,7 @@ class TimeSeries(Generic[T]):
 		df = pd.read_csv(path, parse_dates=[0], date_format="%Y-%m-%d")
 		# Some FRED data files like T10Y2Y lack numeric entries, skip them
 		# This causes the rate of change and difference calculations to use the preceding value instead
-		df.dropna(how="any")
+		df = df.dropna(how="any")
 		data = SortedDict()
 		for row in df.itertuples(index=False):
 			time = cast(pd.Timestamp, row[0])

@@ -45,8 +45,7 @@ def get_technical_features(time: pd.Timestamp, days_since_high_map: dict[pd.Time
 		10,
 		20,
 		40,
-		60,
-		120
+		60
 	]
 	offsets += momentum_days
 	# Technically days_since_x should be part of this calculation
@@ -70,7 +69,6 @@ def get_technical_features(time: pd.Timestamp, days_since_high_map: dict[pd.Time
 	# Price minus moving average features
 	for days in moving_average_days:
 		moving_average_values = close_values[:days]
-		assert len(moving_average_values) == days
 		# Calculate price minus simple moving average
 		moving_average = sum(moving_average_values) / days
 		feature_value = yesterday.close - moving_average
@@ -124,8 +122,10 @@ def get_technical_features(time: pd.Timestamp, days_since_high_map: dict[pd.Time
 	label = 1 if label_rate > 0 else 0
 	return technical_features, label
 
-def get_days_since_x_features(time: pd.Timestamp, records: list[OHLC], days_since_high_map: dict[pd.Timestamp, int]) -> list[Feature]:
+def get_days_since_x_features(time: pd.Timestamp | None, records: list[OHLC], days_since_high_map: dict[pd.Timestamp, int] | None) -> list[Feature]:
 	days_since_x = [
+		5,
+		10,
 		20,
 		40,
 		60,
@@ -135,10 +135,11 @@ def get_days_since_x_features(time: pd.Timestamp, records: list[OHLC], days_sinc
 	high_values = [ohlc.high for ohlc in records]
 	low_values = [ohlc.low for ohlc in records]
 
-	# Days since last all-time high
-	days_since_all_time_high = days_since_high_map[time]
-	feature = Feature("Days Since Last All-Time High", FeatureCategory.TECHNICAL_DAYS_SINCE_X, days_since_all_time_high)
-	technical_features.append(feature)
+	if time is not None and days_since_high_map is not None:
+		# Days since last all-time high
+		days_since_all_time_high = days_since_high_map[time]
+		feature = Feature("Days Since Last All-Time High", FeatureCategory.TECHNICAL_DAYS_SINCE_X, days_since_all_time_high)
+		technical_features.append(feature)
 
 	# Days since last high within the last n days
 	for days in days_since_x:
@@ -158,9 +159,13 @@ def get_days_since_x_features(time: pd.Timestamp, records: list[OHLC], days_sinc
 	return technical_features
 
 def get_rate_of_change(new_value: float | int, old_value: float | int):
+	max_output = 1.0
+	if old_value == 0:
+		return max_output if new_value > 0 else - max_output
 	rate = float(new_value) / float(old_value) - 1.0
 	# Limit the value to reduce the impact of outliers
-	rate = min(rate, 1.0)
+	rate = min(rate, max_output)
+	rate = max(rate, - max_output)
 	return rate
 
 def get_days_since_high_map(data: TrainingData) -> dict[pd.Timestamp, int]:
@@ -176,7 +181,7 @@ def get_days_since_high_map(data: TrainingData) -> dict[pd.Timestamp, int]:
 	return days_since_high_map
 
 def get_daily_volatility(close_values: list[float], days: int) -> float:
-	values = close_values[:days]
+	values = close_values[:days + 1]
 	returns = [get_rate_of_change(a, b) for a, b in zip(values, values[1:])]
 	volatility = stdev(returns)
 	return volatility

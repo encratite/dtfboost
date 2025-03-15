@@ -5,7 +5,7 @@ from enums import PostProcessing, FeatureCategory
 from technical import get_rate_of_change
 from feature import Feature
 
-def get_fred_features(yesterday: pd.Timestamp, data: TrainingData) -> list[Feature]:
+def get_fred_features(time: pd.Timestamp, data: TrainingData) -> list[Feature]:
 	# FRED economic data
 	fred_config: list[tuple[str, str, PostProcessing, FeatureCategory, str]] = [
 		# Market Yield on U.S. Treasury Securities at 10-Year Constant Maturity, Quoted on an Investment Basis (DGS10), percentage, daily
@@ -112,20 +112,20 @@ def get_fred_features(yesterday: pd.Timestamp, data: TrainingData) -> list[Featu
 		("CBOE DJIA Volatility Index", "VXDCLS", PostProcessing.NOMINAL_AND_DIFFERENCE, FeatureCategory.ECONOMIC_VOLATILITY, "8:36 AM CDT"),
 	]
 	features: list[Feature] = []
-	for feature_name, symbol, post_processing, feature_category in fred_config:
+	for feature_name, symbol, post_processing, feature_category, _ in fred_config:
 		match post_processing:
 			case PostProcessing.NOMINAL:
-				feature_value = data.fred_data[symbol].get(yesterday)
+				feature_value = data.fred_data[symbol].get(time)
 				feature = Feature(feature_name, feature_category, feature_value)
 				features.append(feature)
 			case PostProcessing.DIFFERENCE:
 				feature_name = f"{feature_name} (Delta)"
-				values = data.fred_data[symbol].get(yesterday, count=2)
+				values = data.fred_data[symbol].get(time, count=2)
 				feature_value = values[0] - values[1]
 				feature = Feature(feature_name, feature_category, feature_value)
 				features.append(feature)
 			case PostProcessing.NOMINAL_AND_DIFFERENCE:
-				values = data.fred_data[symbol].get(yesterday, count=2)
+				values = data.fred_data[symbol].get(time, count=2)
 				nominal_value = values[0]
 				difference = values[0] - values[1]
 				nominal_feature = Feature(feature_name, feature_category, nominal_value)
@@ -135,8 +135,15 @@ def get_fred_features(yesterday: pd.Timestamp, data: TrainingData) -> list[Featu
 					difference_feature
 				]
 			case PostProcessing.RATE_OF_CHANGE:
-				values = data.fred_data[symbol].get(yesterday, count=2)
+				values = data.fred_data[symbol].get(time, count=2)
 				feature_value = get_rate_of_change(values[0], values[1])
 				feature = Feature(feature_name, feature_category, feature_value)
 				features.append(feature)
+				days_values = [30, 60, 180, 360]
+				for days in days_values:
+					then = time - pd.Timedelta(days=days)
+					value = data.fred_data[symbol].get(then)
+					feature_value = get_rate_of_change(values[0], value)
+					feature = Feature(f"{feature_name} ({days} Days)", feature_category, feature_value)
+					features.append(feature)
 	return features

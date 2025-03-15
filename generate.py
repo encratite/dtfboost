@@ -91,6 +91,7 @@ def main() -> None:
 		"ZN",
 		"ZT",
 		"VI",
+		"6E"
 	]
 
 	for symbol in symbols:

@@ -17,7 +17,7 @@ class PostProcessing(Enum):
 	RATE_OF_CHANGE: Final[int] = 3
 
 class FeatureCategory(Enum):
-	SEASONALITY: Final[int] = 1
+	SEASONALITY: Final[int] = 0
 
 	TECHNICAL_MOMENTUM: Final[int] = 10
 	TECHNICAL_VOLUME: Final[int] = 11
@@ -33,3 +33,9 @@ class FeatureCategory(Enum):
 	ECONOMIC_VOLATILITY: Final[int] = 23
 	ECONOMIC_INDEXES: Final[int] = 24
 	ECONOMIC_CURRENCIES: Final[int] = 25
+
+class FeatureFrequency(Enum):
+	DAILY: Final[int] = 0
+	WEEKLY: Final[int] = 1
+	MONTHLY: Final[int] = 2
+	QUARTERLY: Final[int] = 3

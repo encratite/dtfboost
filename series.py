@@ -39,13 +39,13 @@ class TimeSeries(Generic[T]):
 		series = TimeSeries(data)
 		return series
 
-	def get(self, time: pd.Timestamp, count: int | None = None, offsets: list[int] | None = None, right: bool = False, timestamp: bool = False) -> list[Generic[T]] | Generic[T] | tuple[pd.Timestamp, Generic[T]]:
+	def get(self, time: pd.Timestamp, count: int | None = None, offsets: list[int] | None = None, right: bool = False) -> list[Generic[T]] | Generic[T]:
 		assert count is None or offsets is None
 		single_mode = count is None and offsets is None
 		if single_mode:
 			value = self._data.get(time)
 			if value is not None:
-				return (time, value) if timestamp else value
+				return value
 		index = self._data.bisect_right(time) if right else self._data.bisect_left(time)
 		if index == 0:
 			raise Exception("No record for that date")
@@ -62,10 +62,9 @@ class TimeSeries(Generic[T]):
 			key_index = index - offset
 			if key_index < 0:
 				raise Exception("Not enough data available")
-			time = keys[key_index] # type: ignore
-			value = self._data[time]
-			output = (time, value) if timestamp else value
-			values.append(output)
+			key = keys[key_index] # type: ignore
+			value = self._data[key]
+			values.append(value)
 		if single_mode:
 			return values[0]
 		else:

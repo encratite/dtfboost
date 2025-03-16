@@ -57,14 +57,15 @@ def analyze(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Times
 	returns = []
 	features: defaultdict[str, list[float]] = defaultdict(list)
 
-	def add_rate_of_change(name: str, new_value: float, old_value: float):
+	def add_rate_of_change(name: str, new_value: float, old_value: float) -> None:
 		value = get_rate_of_change(new_value, old_value)
 		features[name].append(value)
 
+	def skip_date(t: pd.Timestamp) -> bool:
+		return Configuration.SKIP_COVID and pd.Timestamp("2020-03-01") <= t < pd.Timestamp("2020-11-01")
+
 	data = TrainingData(symbol)
-	time_range = [t for t in data.ohlc_series if start <= t < end]
-	# time_range = [t for t in data.ohlc_series if start <= t < end and t.dayofweek == 0]
-	# time_range = [t for t in data.ohlc_series if start <= t < end and (t.day == 1 or (t.dayofweek == 0 and t.day <= 2))]
+	time_range = [t for t in data.ohlc_series if start <= t < end and not skip_date(t)]
 
 	for time in time_range:
 		future_time = time + pd.Timedelta(days=1)
@@ -88,12 +89,12 @@ def analyze(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Times
 			feature_value = 1 if month_index == time.month else 0
 			features[feature_name].append(feature_value)
 
-		add_rate_of_change("Close/Open", today.close, today.open)
+		# add_rate_of_change("Close/Open", today.close, today.open)
 		high_low = today.high - today.low
 		if high_low == 0:
 			high_low = 0.01
 		close_high_low = tanh(today.close / high_low)
-		features["(Close-Open)/(High-Low)"].append(close_high_low)
+		# features["(Close-Open)/(High-Low)"].append(close_high_low)
 
 		for days in momentum_days:
 			then = records[days - 1]
@@ -130,7 +131,9 @@ def analyze(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Times
 			features[feature.name].append(feature.value)
 
 		fred_features = get_fred_features(time, data)
-		barchart_features = get_barchart_features(time, data)
+		# This static offset is problematic, it should actually be specific to the contract
+		# Closes are calculated at a different time for each Globex code
+		barchart_features = get_barchart_features(time - pd.Timedelta(days=1), data)
 		economic_features = fred_features + barchart_features
 		for economic_feature in economic_features:
 			features[economic_feature.name].append(economic_feature.value)
@@ -192,6 +195,7 @@ def main() -> None:
 	start = pd.Timestamp(sys.argv[2])
 	split = pd.Timestamp(sys.argv[3])
 	end = pd.Timestamp(sys.argv[4])
+	assert start < split < end
 	p_value = float(sys.argv[5])
 	if Configuration.ENABLE_MULTIPROCESSING:
 		arguments = [(symbol, start, split, end, p_value) for symbol in symbols]

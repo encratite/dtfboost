@@ -1,5 +1,8 @@
 import os
+import re
 from collections import defaultdict
+from glob import glob
+from multiprocessing import Pool
 from typing import Any, cast
 
 import pandas as pd
@@ -82,19 +85,16 @@ def get_ohlc_by_open_interest(records: list[OHLC]) -> OHLC:
 	return max(records, key=lambda x: x.open_interest)
 
 def main() -> None:
-	symbols = [
-		"ES",
-		"GC",
-		"CL",
-		"NG",
-		"ZC",
-		"ZN",
-		"ZT",
-		"VI",
-		"6E"
-	]
+	paths = glob(os.path.join(Configuration.BARCHART_DIRECTORY, f"*.D1.csv"))
+	pattern = re.compile(r"^([A-Z0-9]+)\.D1\.csv")
+	symbols = []
+	for path in paths:
+		match = pattern.match(os.path.basename(path))
+		if match is not None:
+			symbol = match[1]
+			symbols.append(symbol)
+	with Pool(8) as pool:
+		pool.map(generate_continuous_contract, symbols)
 
-	for symbol in symbols:
-		generate_continuous_contract(symbol)
-
-main()
+if __name__ == "__main__":
+	main()

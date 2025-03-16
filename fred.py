@@ -70,6 +70,10 @@ def get_fred_features(time: pd.Timestamp, data: TrainingData) -> list[Feature]:
 		("Industrial Production - Total Index", "INDPRO", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, "8:27 AM CST"),
 		# Trade Balance: Goods and Services, Balance of Payments Basis (BOPGSTB), nominal, monthly
 		("Trade Balance - Goods and Services", "BOPGSTB", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, "7:51 AM CST"),
+		# Global price of Swine (PPORKUSDM), nominal, monthly
+		("Global price of Swine", "PPORKUSDM", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, "2:45 PM CDT"),
+		# Producer Price Index by Commodity: Farm Products: Slaughter Cattle (WPU0131), nominal, monthly
+		("Producer Price Index by Commodity: Farm Products: Slaughter Cattle", "WPU0131", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, "7:56 AM CDT"),
 		# University of Michigan: Consumer Sentiment (UMCSENT), nominal, monthly
 		("University of Michigan Consumer Sentiment", "UMCSENT", PostProcessing.NOMINAL_AND_DIFFERENCE, FeatureCategory.ECONOMIC_GENERAL, "10:01 AM CST"),
 		# Crude Oil Prices: West Texas Intermediate (WTI) - Cushing, Oklahoma (DCOILWTICO), nominal, daily

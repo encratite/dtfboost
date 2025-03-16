@@ -1,5 +1,6 @@
 import os
 from statistics import stdev
+from math import tanh
 
 import pandas as pd
 
@@ -159,13 +160,9 @@ def get_days_since_x_features(time: pd.Timestamp | None, records: list[OHLC], da
 	return technical_features
 
 def get_rate_of_change(new_value: float | int, old_value: float | int):
-	max_output = 1.0
 	if old_value == 0:
-		return max_output if new_value > 0 else - max_output
-	rate = float(new_value) / float(old_value) - 1.0
-	# Limit the value to reduce the impact of outliers
-	rate = min(rate, max_output)
-	rate = max(rate, - max_output)
+		old_value = 0.01
+	rate = tanh(float(new_value) / float(old_value) - 1.0)
 	return rate
 
 def get_days_since_high_map(data: TrainingData) -> dict[pd.Timestamp, int]:

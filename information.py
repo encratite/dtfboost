@@ -16,8 +16,6 @@ from fred import get_fred_features
 from technical import get_rate_of_change, get_daily_volatility, get_days_since_x_features
 
 def analyze(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timestamp, p_value: float) -> None:
-	data = TrainingData(symbol)
-	time_range = [t for t in data.ohlc_series if start <= t < end]
 	momentum_days = [
 		2,
 		3,
@@ -62,6 +60,11 @@ def analyze(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Times
 	def add_rate_of_change(name: str, new_value: float, old_value: float):
 		value = get_rate_of_change(new_value, old_value)
 		features[name].append(value)
+
+	data = TrainingData(symbol)
+	time_range = [t for t in data.ohlc_series if start <= t < end]
+	# time_range = [t for t in data.ohlc_series if start <= t < end and t.dayofweek == 0]
+	# time_range = [t for t in data.ohlc_series if start <= t < end and (t.day == 1 or (t.dayofweek == 0 and t.day <= 2))]
 
 	for time in time_range:
 		future_time = time + pd.Timedelta(days=1)
@@ -168,10 +171,10 @@ def regression_test(symbol: str, x_training: list[list[float]], y_training: list
 		y_predicted = predictions[i]
 		returns = y_real + 1
 		buy_and_hold_performance *= returns
-		if y_predicted > 0:
+		if y_predicted >= 0:
 			model_performance_long *= returns
 			model_performance_long_short *= returns
-		if y_predicted < 0:
+		elif y_predicted < 0:
 			model_performance_short /= returns
 			model_performance_long_short /= returns
 
@@ -190,9 +193,13 @@ def main() -> None:
 	split = pd.Timestamp(sys.argv[3])
 	end = pd.Timestamp(sys.argv[4])
 	p_value = float(sys.argv[5])
-	arguments = [(symbol, start, split, end, p_value) for symbol in symbols]
-	with Pool(8) as pool:
-		pool.starmap(analyze, arguments)
+	if Configuration.ENABLE_MULTIPROCESSING:
+		arguments = [(symbol, start, split, end, p_value) for symbol in symbols]
+		with Pool(8) as pool:
+			pool.starmap(analyze, arguments)
+	else:
+		for symbol in symbols:
+			analyze(symbol, start, split, end, p_value)
 
 if __name__ == "__main__":
 	main()

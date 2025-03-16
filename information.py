@@ -3,6 +3,7 @@ import sys
 from collections import defaultdict
 from math import tanh
 from multiprocessing import Pool
+import calendar
 
 import pandas as pd
 from scipy.stats import spearmanr
@@ -14,7 +15,7 @@ from economic import get_barchart_features
 from fred import get_fred_features
 from technical import get_rate_of_change, get_daily_volatility, get_days_since_x_features
 
-def analyze(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timestamp) -> None:
+def analyze(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timestamp, p_value: float) -> None:
 	data = TrainingData(symbol)
 	time_range = [t for t in data.ohlc_series if start <= t < end]
 	momentum_days = [
@@ -70,9 +71,19 @@ def analyze(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Times
 		today = records[0]
 		assert time == today.time
 		assert future.time > today.time
-		# print(f"{future_time} vs. {future.time} {future.close} / {time} {today.time} {today.close}")
 		future_returns = get_rate_of_change(future.close, today.close)
 		returns.append(future_returns)
+
+		for i in range(len(calendar.day_name)):
+			feature_name = f"Seasonality: {calendar.day_name[i]}"
+			feature_value = 1 if i == time.dayofweek else 0
+			features[feature_name].append(feature_value)
+
+		for i in range(len(calendar.month_name) - 1):
+			month_index = i + 1
+			feature_name = f"Seasonality: {calendar.month_name[month_index]}"
+			feature_value = 1 if month_index == time.month else 0
+			features[feature_name].append(feature_value)
 
 		add_rate_of_change("Close/Open", today.close, today.open)
 		high_low = today.high - today.low
@@ -127,7 +138,7 @@ def analyze(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Times
 		if all(x == feature_values[0] for x in feature_values):
 			continue
 		significance = spearmanr(returns, feature_values) # type: ignore
-		if significance.pvalue < 0.05:
+		if significance.pvalue < p_value:
 			results.append((feature_name, significance.statistic, significance.pvalue))
 			significant_features.append(feature_values)
 	results = sorted(results, key=lambda x: abs(x[1]), reverse=True)
@@ -170,15 +181,16 @@ def regression_test(symbol: str, x_training: list[list[float]], y_training: list
 	print(f"[{symbol}] Linear model performance (long/short): {model_performance_long_short - 1:+.2%}")
 
 def main() -> None:
-	if len(sys.argv) != 5:
+	if len(sys.argv) != 6:
 		print("Usage:")
-		print(f"python {sys.argv[0]} <symbols> <start date> <split date> <end date>")
+		print(f"python {sys.argv[0]} <symbols> <start date> <split date> <end date> <max p-value>")
 		return
 	symbols = [x.strip() for x in sys.argv[1].split(",")]
 	start = pd.Timestamp(sys.argv[2])
 	split = pd.Timestamp(sys.argv[3])
 	end = pd.Timestamp(sys.argv[4])
-	arguments = [(symbol, start, split, end) for symbol in symbols]
+	p_value = float(sys.argv[5])
+	arguments = [(symbol, start, split, end, p_value) for symbol in symbols]
 	with Pool(8) as pool:
 		pool.starmap(analyze, arguments)
 

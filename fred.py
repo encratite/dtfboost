@@ -70,10 +70,6 @@ def get_fred_features(time: pd.Timestamp, data: TrainingData) -> list[Feature]:
 		("Industrial Production - Total Index", "INDPRO", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, "8:27 AM CST"),
 		# Trade Balance: Goods and Services, Balance of Payments Basis (BOPGSTB), nominal, monthly
 		("Trade Balance - Goods and Services", "BOPGSTB", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, "7:51 AM CST"),
-		# Global price of Swine (PPORKUSDM), nominal, monthly
-		("Global price of Swine", "PPORKUSDM", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, "2:45 PM CDT"),
-		# Producer Price Index by Commodity: Farm Products: Slaughter Cattle (WPU0131), nominal, monthly
-		("Producer Price Index by Commodity: Farm Products: Slaughter Cattle", "WPU0131", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, "7:56 AM CDT"),
 		# University of Michigan: Consumer Sentiment (UMCSENT), nominal, monthly
 		("University of Michigan Consumer Sentiment", "UMCSENT", PostProcessing.NOMINAL_AND_DIFFERENCE, FeatureCategory.ECONOMIC_GENERAL, "10:01 AM CST"),
 		# Crude Oil Prices: West Texas Intermediate (WTI) - Cushing, Oklahoma (DCOILWTICO), nominal, daily
@@ -114,6 +110,22 @@ def get_fred_features(time: pd.Timestamp, data: TrainingData) -> list[Feature]:
 		("CBOE NASDAQ 100 Volatility Index", "VXNCLS", PostProcessing.NOMINAL_AND_DIFFERENCE, FeatureCategory.ECONOMIC_VOLATILITY, "8:36 AM CDT"),
 		# CBOE DJIA Volatility Index (VXDCLS), nominal, daily
 		("CBOE DJIA Volatility Index", "VXDCLS", PostProcessing.NOMINAL_AND_DIFFERENCE, FeatureCategory.ECONOMIC_VOLATILITY, "8:36 AM CDT"),
+		# Global price of Swine (PPORKUSDM), nominal, monthly
+		("Global price of Swine", "PPORKUSDM", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL,"2:45 PM CDT"),
+		# Producer Price Index by Commodity: Farm Products: Slaughter Cattle (WPU0131), nominal, monthly
+		("Producer Price Index: Slaughter Cattle", "WPU0131", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, "7:56 AM CDT"),
+		# Global price of Sugar, No. 11, World (PSUGAISAUSDM)
+		("Global price of Sugar, No. 11, World", "PSUGAISAUSDM", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, "2:45 PM CDT"),
+		# Average Price: Sugar, White, All Sizes (Cost per Pound/453.6 Grams) in U.S. City Average (APU0000715211)
+		("Average Price: Sugar, White, All Sizes", "APU0000715211", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, "7:40 AM CDT"),
+		# Average Price: Milk, Fresh, Whole, Fortified (Cost per Gallon/3.8 Liters) in U.S. City Average (APU0000709112)
+		("Average Price: Milk, Fresh, Whole, Fortified", "APU0000709112", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, "7:40 AM CDT"),
+		# Producer Price Index by Commodity: Farm Products: Raw Milk (WPS016)
+		("Producer Price Index: Raw Milk", "WPS016", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, "7:57 AM CDT"),
+		# Producer Price Index by Industry: Fluid Milk Manufacturing: Fluid Milk and Cream, Bulk Sales (PCU3115113115111)
+		("Producer Price Index: Fluid Milk and Cream", "PCU3115113115111", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, "8:00 AM CDT"),
+		# Producer Price Index by Commodity: Processed Foods and Feeds: Fluid Whole Milk (WPU02310301)
+		("Producer Price Index: Fluid Whole Milk", "WPU02310301", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, "7:56 AM CDT"),
 	]
 	features: list[Feature] = []
 	for feature_name, symbol, post_processing, feature_category, _ in fred_config:

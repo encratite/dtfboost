@@ -1,13 +1,17 @@
+import calendar
 import os
 import sys
+import random
 from collections import defaultdict
 from math import tanh
+from statistics import mean
 from multiprocessing import Pool
-import calendar
 
 import pandas as pd
 from scipy.stats import spearmanr
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LinearRegression, ElasticNetCV, LassoCV, ARDRegression, BayesianRidge
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.neural_network import MLPRegressor
 
 from config import Configuration
 from data import TrainingData
@@ -15,7 +19,7 @@ from economic import get_barchart_features
 from fred import get_fred_features
 from technical import get_rate_of_change, get_daily_volatility, get_days_since_x_features
 
-def analyze(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timestamp, p_value: float) -> None:
+def analyze(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timestamp, p_value: float) -> dict[str, float]:
 	momentum_days = [
 		2,
 		3,
@@ -55,6 +59,7 @@ def analyze(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Times
 	series_count = max(momentum_days)
 
 	returns = []
+	deltas = []
 	features: defaultdict[str, list[float]] = defaultdict(list)
 
 	def add_rate_of_change(name: str, new_value: float, old_value: float) -> None:
@@ -65,10 +70,16 @@ def analyze(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Times
 		return Configuration.SKIP_COVID and pd.Timestamp("2020-03-01") <= t < pd.Timestamp("2020-11-01")
 
 	data = TrainingData(symbol)
-	time_range = [t for t in data.ohlc_series if start <= t < end and not skip_date(t)]
+	# time_range = [t for t in data.ohlc_series if start <= t < end and not skip_date(t)]
+	# time_range = [t for t in data.ohlc_series if start <= t < end and not skip_date(t) and t.dayofweek == 0]
+	# time_range = [t for t in data.ohlc_series if start <= t < end and not skip_date(t) and t.dayofweek == 0 and t.week % 2 == 0]
+	time_range = [t for t in data.ohlc_series if start <= t < end and not skip_date(t) and t.dayofweek == 0 and t.week % 4 == 0]
 
 	for time in time_range:
-		future_time = time + pd.Timedelta(days=1)
+		# future_time = time + pd.Timedelta(days=1)
+		# future_time = time + pd.Timedelta(days=7)
+		# future_time = time + pd.Timedelta(days=14)
+		future_time = time + pd.Timedelta(days=28)
 		future = data.ohlc_series.get(future_time, right=True)
 		records = data.ohlc_series.get(time, count=series_count)
 		close_values = [x.close for x in records]
@@ -77,6 +88,8 @@ def analyze(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Times
 		assert future.time > today.time
 		future_returns = get_rate_of_change(future.close, today.close)
 		returns.append(future_returns)
+		delta = future.close - today.close
+		deltas.append(delta)
 
 		for i in range(len(calendar.day_name)):
 			feature_name = f"Seasonality: {calendar.day_name[i]}"
@@ -139,52 +152,135 @@ def analyze(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Times
 			features[economic_feature.name].append(economic_feature.value)
 
 	results: list[tuple[str, float, float]] = []
-	significant_features = []
+	all_features = list(features.values())
+	filtered_features = []
 	for feature_name, feature_values in features.items():
 		if all(x == feature_values[0] for x in feature_values):
 			continue
 		significance = spearmanr(returns, feature_values) # type: ignore
 		if significance.pvalue < p_value:
 			results.append((feature_name, significance.statistic, significance.pvalue))
-			significant_features.append(feature_values)
+			filtered_features.append(feature_values)
 	results = sorted(results, key=lambda x: abs(x[1]), reverse=True)
 	results_df = pd.DataFrame(results, columns=["Feature", "Spearman's rho", "p-value"])
 	path = os.path.join(Configuration.PLOT_DIRECTORY, "IC", f"{symbol}.csv")
 	results_df.to_csv(path, index=False, float_format="%.5f")
 	print(f"Wrote {path}")
 
+	all_regression_data = get_regression_features(all_features, returns, deltas, time_range, split)
+	filtered_regression_data = get_regression_features(filtered_features, returns, deltas, time_range, split)
+	output = regression_test(symbol, all_regression_data, filtered_regression_data)
+	return output
+
+def get_regression_features(features: list[list[float]], returns: list[float], deltas: list[float], time_range: list[pd.Timestamp], split: pd.Timestamp) -> tuple[list[list[float]], list[list[float]], list[float], list[float], list[float]]:
 	training_samples = len([time for time in time_range if time < split])
-	regression_features = [list(row) for row in zip(*significant_features)]
+	regression_features = [list(row) for row in zip(*features)]
 	x_training = regression_features[:training_samples]
 	x_validation = regression_features[training_samples:]
 	y_training = returns[:training_samples]
 	y_validation = returns[training_samples:]
-	regression_test(symbol, x_training, y_training, x_validation, y_validation)
+	deltas_validation = deltas[training_samples:]
+	return x_training, x_validation, y_training, y_validation, deltas_validation
 
-def regression_test(symbol: str, x_training: list[list[float]], y_training: list[float], x_validation: list[list[float]], y_validation: list[float]) -> None:
-	model = LinearRegression()
-	model.fit(x_training, y_training)
-	predictions = model.predict(x_validation)
-	buy_and_hold_performance = 1
-	model_performance_long = 1
-	model_performance_short = 1
-	model_performance_long_short = 1
-	for i in range(len(y_validation)):
-		y_real = y_validation[i]
-		y_predicted = predictions[i]
-		returns = y_real + 1
-		buy_and_hold_performance *= returns
-		if y_predicted >= 0:
-			model_performance_long *= returns
-			model_performance_long_short *= returns
-		elif y_predicted < 0:
-			model_performance_short /= returns
-			model_performance_long_short /= returns
+def regression_test(
+		symbol: str,
+		all_regression_data: tuple[list[list[float]], list[list[float]], list[float], list[float], list[float]],
+		filtered_regression_data: tuple[list[list[float]], list[list[float]], list[float], list[float], list[float]]
+	) -> dict[str, float]:
+	assets = pd.read_csv(Configuration.ASSETS_CONFIG)
+	rows = assets[assets["symbol"] == symbol]
+	if len(rows) == 0:
+		raise Exception(f"No such symbol in assets configuration: {symbol}")
+	asset = rows.iloc[0].to_dict()
+	tick_size = asset["tick_size"]
+	tick_value = asset["tick_value"]
+	broker_fee = asset["broker_fee"]
+	exchange_fee = asset["exchange_fee"]
+	margin = asset["margin"]
+	contracts = min(int(round(10000.0 / margin)), 1)
+	slippage = 2 * contracts * (broker_fee + exchange_fee + tick_value)
+	models = [
+		# ("LinearRegression", LinearRegression(), True),
+		# ("LassoCV", LassoCV(max_iter=10000), True),
+		# ("ElasticNetCV", ElasticNetCV(max_iter=10000), True),
+		("ARDRegression", ARDRegression(), True),
+		# ("BayesianRidge", BayesianRidge(), True),
+		# ("RandomForestRegressor(n_estimators=100)", RandomForestRegressor(n_estimators=100, random_state=random.seed(Configuration.SEED)), True),
+		("RandomForestRegressor(n_estimators=120)", RandomForestRegressor(n_estimators=120, random_state=random.seed(Configuration.SEED)), True),
+		# ("RandomForestRegressor(n_estimators=50, max_depth=2)", RandomForestRegressor(n_estimators=50, max_depth=2, random_state=random.seed(Configuration.SEED)), True),
+		# ("RandomForestRegressor(n_estimators=50, max_depth=3)", RandomForestRegressor(n_estimators=50, max_depth=3, random_state=random.seed(Configuration.SEED)), True),
+		# ("RandomForestRegressor(n_estimators=100, max_depth=3)", RandomForestRegressor(n_estimators=100, max_depth=3, random_state=random.seed(Configuration.SEED)), True),
+		# ("RandomForestRegressor(n_estimators=100, max_depth=4)", RandomForestRegressor(n_estimators=100, max_depth=4, random_state=random.seed(Configuration.SEED)), True),
+		# ("RandomForestRegressor(n_estimators=100, max_depth=5)", RandomForestRegressor(n_estimators=100, max_depth=5, random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor1", MLPRegressor(hidden_layer_sizes=(32, 16), activation="relu", solver="adam", max_iter=1000, random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor2", MLPRegressor(hidden_layer_sizes=(16, 8), activation="relu", solver="adam", max_iter=1000, random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor3", MLPRegressor(hidden_layer_sizes=(64, 32), activation="tanh", solver="adam", max_iter=1000, random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor4", MLPRegressor(hidden_layer_sizes=(64, 32, 16), activation="tanh", solver="adam", max_iter=1000, random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor5", MLPRegressor(hidden_layer_sizes=(32, 16), activation="relu", solver="lbfgs", max_iter=1000, random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor6", MLPRegressor(hidden_layer_sizes=(16, 8), activation="relu", solver="lbfgs", max_iter=1000, random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor7", MLPRegressor(hidden_layer_sizes=(32, 16), activation="tanh", solver="lbfgs", max_iter=1000, random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor8", MLPRegressor(hidden_layer_sizes=(16, 8, 4), activation="tanh", solver="lbfgs", max_iter=1000, random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor9", MLPRegressor(hidden_layer_sizes=(32, 16), activation="relu", solver="sgd", max_iter=1000, random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor10", MLPRegressor(hidden_layer_sizes=(16, 8), activation="relu", solver="sgd", max_iter=1000, random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor11", MLPRegressor(hidden_layer_sizes=(32, 16), activation="tanh", solver="sgd", max_iter=1000, random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor12", MLPRegressor(hidden_layer_sizes=(16, 8, 4), activation="tanh", solver="sgd", max_iter=1000, random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor13", MLPRegressor(hidden_layer_sizes=(16, 8, 4), activation="tanh", solver="lbfgs", max_iter=1500, random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor14", MLPRegressor(hidden_layer_sizes=(16, 8, 4), activation="tanh", solver="lbfgs", max_iter=2000, random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor15.1", MLPRegressor(hidden_layer_sizes=(16, 8, 4), activation="tanh", solver="lbfgs", max_iter=1000, random_state=random.seed(Configuration.SEED)), True),
+		("MLPRegressor15.2", MLPRegressor(hidden_layer_sizes=(16, 8, 4), activation="tanh", solver="lbfgs", max_iter=1500, random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor15.3", MLPRegressor(hidden_layer_sizes=(16, 8, 4), activation="tanh", solver="lbfgs", max_iter=2000, random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor15.4", MLPRegressor(hidden_layer_sizes=(16, 8, 4), activation="tanh", solver="lbfgs", max_iter=2500, random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor15.5", MLPRegressor(hidden_layer_sizes=(16, 8, 4), activation="tanh", solver="lbfgs", max_iter=3000, random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor16", MLPRegressor(hidden_layer_sizes=(16, 8, 4), activation="tanh", solver="lbfgs", max_iter=10000, random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor17", MLPRegressor(hidden_layer_sizes=(16, 8, 4), activation="tanh", solver="lbfgs", max_iter=10000, learning_rate="adaptive", random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor18", MLPRegressor(hidden_layer_sizes=(20, 10, 5), activation="tanh", solver="lbfgs", max_iter=10000, learning_rate="adaptive", random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor19", MLPRegressor(hidden_layer_sizes=(14, 6, 4), activation="tanh", solver="lbfgs", max_iter=10000, learning_rate="adaptive", random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor20", MLPRegressor(hidden_layer_sizes=(16, 8, 4), activation="logistic", solver="lbfgs", max_iter=1000, learning_rate="adaptive", random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor21", MLPRegressor(hidden_layer_sizes=(16, 8, 4), activation="logistic", solver="lbfgs", max_iter=5000, learning_rate="adaptive", random_state=random.seed(Configuration.SEED)), True),
+		# ("MLPRegressor22", MLPRegressor(hidden_layer_sizes=(32, 32, 16), activation="tanh", solver="lbfgs", max_iter=1000,  learning_rate="adaptive", random_state=random.seed(Configuration.SEED)), True),
+	]
+	output = {}
+	for model_name, model, enable_filtering in models:
+		x_training, x_validation, y_training, y_validation, deltas = filtered_regression_data if enable_filtering else all_regression_data
+		model.fit(x_training, y_training)
+		predictions = model.predict(x_validation)
+		buy_and_hold_cash = Configuration.INITIAL_CASH
+		long_only_cash = Configuration.INITIAL_CASH
+		short_only_cash = Configuration.INITIAL_CASH
+		long_short_cash = Configuration.INITIAL_CASH
+		for i in range(len(y_validation)):
+			delta = deltas[i]
+			returns = contracts * delta / tick_size * tick_value
+			buy_and_hold_cash += returns
+			y_predicted = predictions[i]
+			if y_predicted >= 0:
+				long_only_cash += returns
+				long_only_cash -= slippage
+				long_short_cash += returns
+			elif y_predicted < 0:
+				short_only_cash -= returns
+				short_only_cash -= slippage
+				long_short_cash -= returns
+			long_short_cash -= slippage
 
-	print(f"[{symbol}] Buy and hold performance: {buy_and_hold_performance - 1:+.2%}")
-	print(f"[{symbol}] Linear model performance (long): {model_performance_long - 1:+.2%}")
-	print(f"[{symbol}] Linear model performance (short): {model_performance_short - 1:+.2%}")
-	print(f"[{symbol}] Linear model performance (long/short): {model_performance_long_short - 1:+.2%}")
+		print(f"[{symbol} {model_name}] Number of features: {len(x_training[0])}")
+		print(f"[{symbol} {model_name}] Number of samples: {len(x_training)} for training, {len(x_validation)} for validation")
+		print(f"[{symbol} {model_name}] Buy and hold performance: {get_performance(buy_and_hold_cash)}")
+		print(f"[{symbol} {model_name}] Model performance (long): {get_performance(long_only_cash)}")
+		print(f"[{symbol} {model_name}] Model performance (short): {get_performance(short_only_cash)}")
+		print(f"[{symbol} {model_name}] Model performance (long/short): {get_performance(long_short_cash)}")
+		output[model_name] = long_short_cash
+
+	return output
+
+def format_currency(value):
+	if value >= 0:
+		return f"${value:,.2f}"
+	else:
+		return f"(${abs(value):,.2f})"
+
+def get_performance(cash):
+	return f"{cash / Configuration.INITIAL_CASH - 1:+.2%}"
 
 def main() -> None:
 	if len(sys.argv) != 6:
@@ -200,7 +296,18 @@ def main() -> None:
 	if Configuration.ENABLE_MULTIPROCESSING:
 		arguments = [(symbol, start, split, end, p_value) for symbol in symbols]
 		with Pool(8) as pool:
-			pool.starmap(analyze, arguments)
+			model_performance = pool.starmap(analyze, arguments)
+			total_model_performance = defaultdict(list)
+			for performance_dict in model_performance:
+				for model_name, cash in performance_dict.items():
+					total_model_performance[model_name].append(cash)
+			print("")
+			all_cash_values = []
+			for model_name, cash_values in total_model_performance.items():
+				cash = mean(cash_values)
+				all_cash_values += cash_values
+				print(f"[{model_name}] Mean performance (long/short): {get_performance(cash)}")
+			print(f"Mean of all models with p-value {p_value}: {get_performance(mean(all_cash_values))}")
 	else:
 		for symbol in symbols:
 			analyze(symbol, start, split, end, p_value)

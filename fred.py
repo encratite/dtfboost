@@ -87,7 +87,7 @@ def get_fred_features(time: pd.Timestamp, data: TrainingData) -> list[Feature]:
 		# Global price of Copper (PCOPPUSDM), nominal, monthly
 		("Global Price of Copper", "PCOPPUSDM", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_RESOURCES, FeatureFrequency.MONTHLY, 41, "2:45 PM CDT"),
 		# Global price of Energy index (PNRGINDEXM), nominal, monthly
-		("Global Price of Energy Index", "PNRGINDEXM", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_RESOURCES, FeatureFrequency.MONTHLY,41,  "2:45 PM CDT"),
+		("Global Price of Energy Index", "PNRGINDEXM", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_RESOURCES, FeatureFrequency.MONTHLY, 41, "2:45 PM CDT"),
 		# Global price of Natural gas, EU (PNGASEUUSDM), nominal, monthly
 		("Global Price of Natural Gas - EU", "PNGASEUUSDM", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_RESOURCES, FeatureFrequency.MONTHLY, 41, "2:45 PM CDT"),
 		# Global price of Aluminum (PALUMUSDM), nominal, monthly
@@ -117,15 +117,19 @@ def get_fred_features(time: pd.Timestamp, data: TrainingData) -> list[Feature]:
 		# Global price of Sugar, No. 11, World (PSUGAISAUSDM), nominal, monthly
 		("Global price of Sugar, No. 11, World", "PSUGAISAUSDM", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, FeatureFrequency.MONTHLY, 41, "2:45 PM CDT"),
 		# Average Price: Sugar, White, All Sizes (Cost per Pound/453.6 Grams) in U.S. City Average (APU0000715211), nominal, monthly
-		("Average Price: Sugar, White, All Sizes", "APU0000715211", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, FeatureFrequency.MONTHLY, 42, "7:40 AM CDT"),
+		# ("Average Price: Sugar, White, All Sizes", "APU0000715211", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, FeatureFrequency.MONTHLY, 42, "7:40 AM CDT"),
 		# Average Price: Milk, Fresh, Whole, Fortified (Cost per Gallon/3.8 Liters) in U.S. City Average (APU0000709112), nominal, monthly
-		("Average Price: Milk, Fresh, Whole, Fortified", "APU0000709112", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, FeatureFrequency.MONTHLY, 42, "7:40 AM CDT"),
+		# ("Average Price: Milk, Fresh, Whole, Fortified", "APU0000709112", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, FeatureFrequency.MONTHLY, 42, "7:40 AM CDT"),
 		# Producer Price Index by Commodity: Farm Products: Raw Milk (WPS016), nominal, monthly
-		("Producer Price Index: Raw Milk", "WPS016", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, FeatureFrequency.MONTHLY, 43, "7:57 AM CDT"),
+		# ("Producer Price Index: Raw Milk", "WPS016", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, FeatureFrequency.MONTHLY, 43, "7:57 AM CDT"),
 		# Producer Price Index by Industry: Fluid Milk Manufacturing: Fluid Milk and Cream, Bulk Sales (PCU3115113115111), nominal, monthly
-		("Producer Price Index: Fluid Milk and Cream", "PCU3115113115111", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, FeatureFrequency.MONTHLY, 43, "8:00 AM CDT"),
+		# ("Producer Price Index: Fluid Milk and Cream", "PCU3115113115111", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, FeatureFrequency.MONTHLY, 43, "8:00 AM CDT"),
 		# Producer Price Index by Commodity: Processed Foods and Feeds: Fluid Whole Milk (WPU02310301), nominal, monthly
-		("Producer Price Index: Fluid Whole Milk", "WPU02310301", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, FeatureFrequency.MONTHLY, 43, "7:56 AM CDT"),
+		# ("Producer Price Index: Fluid Whole Milk", "WPU02310301", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, FeatureFrequency.MONTHLY, 43, "7:56 AM CDT"),
+		# Producer Price Index by Commodity: Chemicals and Allied Products: Ethanol (Ethyl Alcohol) (WPU06140341), nominal, monthly
+		("Producer Price Index by Commodity: Ethanol", "WPU06140341", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, FeatureFrequency.MONTHLY, 43, "7:55 AM CDT"),
+		# Global price of Cotton (PCOTTINDUSDM), nominal, monthly
+		("Global price of Cotton", "PCOTTINDUSDM", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, FeatureFrequency.MONTHLY, 42, "2:45 PM CDT"),
 	]
 	features: list[Feature] = []
 	for feature_name, symbol, post_processing, feature_category, feature_frequency, days_offset, _ in fred_config:

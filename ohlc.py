@@ -11,6 +11,7 @@ class OHLC:
 	high: float
 	low: float
 	close: float
+	unadjusted_close: float | None
 	volume: int
 	open_interest: int | None
 
@@ -24,6 +25,10 @@ class OHLC:
 		self.high = row.high
 		self.low = row.low
 		self.close = row.close
+		if hasattr(row, "unadjusted_close"):
+			self.unadjusted_close = row.unadjusted_close
+		else:
+			self.unadjusted_close = None
 		self.volume = row.volume
 		if hasattr(row, "open_interest"):
 			self.open_interest = row.open_interest

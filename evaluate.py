@@ -1,25 +1,34 @@
 import calendar
 import os
 import sys
-import random
 from collections import defaultdict
 from math import tanh
-from statistics import mean
 from multiprocessing import Pool
+from statistics import mean
+from typing import cast
 
 import pandas as pd
 from scipy.stats import spearmanr
-from sklearn.linear_model import LinearRegression, ElasticNetCV, LassoCV, ARDRegression, BayesianRidge
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression, ElasticNetCV, LassoCV, ARDRegression, BayesianRidge
 from sklearn.neural_network import MLPRegressor
 
 from config import Configuration
 from data import TrainingData
 from economic import get_barchart_features
+from enums import RebalanceFrequency
 from fred import get_fred_features
 from technical import get_rate_of_change, get_daily_volatility, get_days_since_x_features
+from results import EvaluationResults
 
-def analyze(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timestamp, p_value: float) -> dict[str, float]:
+def evaluate(
+		symbol: str,
+		start: pd.Timestamp,
+		split: pd.Timestamp,
+		end: pd.Timestamp,
+		rebalance_frequency: RebalanceFrequency,
+		feature_limit: int | None
+) -> dict[str, EvaluationResults]:
 	momentum_days = [
 		2,
 		3,
@@ -70,16 +79,24 @@ def analyze(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Times
 		return Configuration.SKIP_COVID and pd.Timestamp("2020-03-01") <= t < pd.Timestamp("2020-11-01")
 
 	data = TrainingData(symbol)
-	# time_range = [t for t in data.ohlc_series if start <= t < end and not skip_date(t)]
-	# time_range = [t for t in data.ohlc_series if start <= t < end and not skip_date(t) and t.dayofweek == 0]
-	# time_range = [t for t in data.ohlc_series if start <= t < end and not skip_date(t) and t.dayofweek == 0 and t.week % 2 == 0]
-	time_range = [t for t in data.ohlc_series if start <= t < end and not skip_date(t) and t.dayofweek == 0 and t.week % 4 == 0]
+	time_range = [t for t in data.ohlc_series if start <= t < end and not skip_date(t)]
+
+	match rebalance_frequency:
+		case RebalanceFrequency.DAILY:
+			forecast_days = 1
+		case RebalanceFrequency.WEEKLY:
+			forecast_days = 7
+		case RebalanceFrequency.MONTHLY:
+			forecast_days = 30
+		case _:
+			raise Exception("Unknown rebalance frequency value")
+
+	first = data.ohlc_series.get(time_range[0])
+	last = data.ohlc_series.get(time_range[-1])
+	buy_and_hold_performance = last.close / first.close
 
 	for time in time_range:
-		# future_time = time + pd.Timedelta(days=1)
-		# future_time = time + pd.Timedelta(days=7)
-		# future_time = time + pd.Timedelta(days=14)
-		future_time = time + pd.Timedelta(days=28)
+		future_time = time + pd.Timedelta(days=forecast_days)
 		future = data.ohlc_series.get(future_time, right=True)
 		records = data.ohlc_series.get(time, count=series_count)
 		close_values = [x.close for x in records]
@@ -100,6 +117,12 @@ def analyze(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Times
 			month_index = i + 1
 			feature_name = f"Seasonality: {calendar.month_name[month_index]}"
 			feature_value = 1 if month_index == time.month else 0
+			features[feature_name].append(feature_value)
+
+		for i in range(31):
+			day = i + 1
+			feature_name = f"Seasonality: Day {day}"
+			feature_value = 1 if day == time.day else 0
 			features[feature_name].append(feature_value)
 
 		# add_rate_of_change("Close/Open", today.close, today.open)
@@ -152,41 +175,45 @@ def analyze(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Times
 			features[economic_feature.name].append(economic_feature.value)
 
 	results: list[tuple[str, float, float]] = []
-	all_features = list(features.values())
-	filtered_features = []
+	rho_features = []
 	for feature_name, feature_values in features.items():
 		if all(x == feature_values[0] for x in feature_values):
 			continue
 		significance = spearmanr(returns, feature_values) # type: ignore
-		if significance.pvalue < p_value:
-			results.append((feature_name, significance.statistic, significance.pvalue))
-			filtered_features.append(feature_values)
+		results.append((feature_name, significance.statistic, significance.pvalue))
+		rho_features.append((feature_values, significance.statistic))
 	results = sorted(results, key=lambda x: abs(x[1]), reverse=True)
 	results_df = pd.DataFrame(results, columns=["Feature", "Spearman's rho", "p-value"])
 	path = os.path.join(Configuration.PLOT_DIRECTORY, "IC", f"{symbol}.csv")
 	results_df.to_csv(path, index=False, float_format="%.5f")
 	print(f"Wrote {path}")
 
-	all_regression_data = get_regression_features(all_features, returns, deltas, time_range, split)
-	filtered_regression_data = get_regression_features(filtered_features, returns, deltas, time_range, split)
-	output = regression_test(symbol, all_regression_data, filtered_regression_data)
-	return output
-
-def get_regression_features(features: list[list[float]], returns: list[float], deltas: list[float], time_range: list[pd.Timestamp], split: pd.Timestamp) -> tuple[list[list[float]], list[list[float]], list[float], list[float], list[float]]:
+	rho_features = sorted(rho_features, key=lambda x: x[0])
+	if feature_limit is not None:
+		rho_features = rho_features[:feature_limit]
+	significant_features = [features for features, _rho in rho_features]
 	training_samples = len([time for time in time_range if time < split])
-	regression_features = [list(row) for row in zip(*features)]
+	validation_times = [time for time in time_range if time >= split]
+	regression_features = [list(row) for row in zip(*significant_features)]
 	x_training = regression_features[:training_samples]
 	x_validation = regression_features[training_samples:]
 	y_training = returns[:training_samples]
 	y_validation = returns[training_samples:]
 	deltas_validation = deltas[training_samples:]
-	return x_training, x_validation, y_training, y_validation, deltas_validation
+	output = regression_test(symbol, x_training, y_training, x_validation, y_validation, validation_times, deltas_validation, rebalance_frequency, buy_and_hold_performance)
+	return output
 
 def regression_test(
 		symbol: str,
-		all_regression_data: tuple[list[list[float]], list[list[float]], list[float], list[float], list[float]],
-		filtered_regression_data: tuple[list[list[float]], list[list[float]], list[float], list[float], list[float]]
-	) -> dict[str, float]:
+		x_training: list[list[float]],
+		y_training: list[float],
+		x_validation: list[list[float]],
+		y_validation: list[float],
+		validation_times: list[pd.Timestamp],
+		deltas: list[float],
+		rebalance_frequency: RebalanceFrequency,
+		buy_and_hold_performance: float
+	) -> dict[str, EvaluationResults]:
 	assets = pd.read_csv(Configuration.ASSETS_CONFIG)
 	rows = assets[assets["symbol"] == symbol]
 	if len(rows) == 0:
@@ -200,86 +227,86 @@ def regression_test(
 	contracts = min(int(round(10000.0 / margin)), 1)
 	slippage = 2 * contracts * (broker_fee + exchange_fee + tick_value)
 	models = [
-		("LinearRegression", LinearRegression(), True),
-		("LassoCV", LassoCV(max_iter=10000), True),
-		("ElasticNetCV", ElasticNetCV(max_iter=10000), True),
-		("ARDRegression", ARDRegression(), True),
-		("BayesianRidge", BayesianRidge(), True),
-		("RandomForestRegressor", RandomForestRegressor(n_estimators=120, random_state=random.seed(Configuration.SEED)), True),
-		("MLPRegressor", MLPRegressor(hidden_layer_sizes=(16, 8, 4), activation="tanh", solver="lbfgs", max_iter=1500, random_state=random.seed(Configuration.SEED)), True),
+		("LinearRegression", LinearRegression()),
+		("LassoCV", LassoCV(max_iter=10000, random_state=Configuration.SEED)),
+		("ElasticNetCV", ElasticNetCV(max_iter=10000, random_state=Configuration.SEED)),
+		("ARDRegression", ARDRegression()),
+		("BayesianRidge", BayesianRidge()),
+		("RandomForestRegressor", RandomForestRegressor(n_estimators=120, random_state=Configuration.SEED)),
+		("MLPRegressor", MLPRegressor(hidden_layer_sizes=(16, 8, 4), activation="tanh", solver="lbfgs", max_iter=1500, random_state=Configuration.SEED)),
 	]
+	print(f"[{symbol}] Number of features: {len(x_training[0])}")
+	print(f"[{symbol}] Number of samples: {len(x_training)} for training, {len(x_validation)} for validation")
 	output = {}
-	for model_name, model, enable_filtering in models:
-		x_training, x_validation, y_training, y_validation, deltas = filtered_regression_data if enable_filtering else all_regression_data
+	for model_name, model in models:
+		evaluation_results = EvaluationResults(buy_and_hold_performance, slippage, validation_times[0], validation_times[-1], rebalance_frequency)
 		model.fit(x_training, y_training)
 		predictions = model.predict(x_validation)
-		buy_and_hold_cash = Configuration.INITIAL_CASH
-		long_only_cash = Configuration.INITIAL_CASH
-		short_only_cash = Configuration.INITIAL_CASH
-		long_short_cash = Configuration.INITIAL_CASH
+		last_trade_time: pd.Timestamp | None = None
 		for i in range(len(y_validation)):
+			time = validation_times[i]
+			if not Configuration.DAILY_VALIDATION and last_trade_time is not None:
+				if rebalance_frequency == RebalanceFrequency.WEEKLY:
+					if time.week == last_trade_time.week:
+						continue
+				if rebalance_frequency == RebalanceFrequency.MONTHLY:
+					if time.month == last_trade_time.month:
+						continue
 			delta = deltas[i]
 			returns = contracts * delta / tick_size * tick_value
-			buy_and_hold_cash += returns
 			y_predicted = predictions[i]
-			if y_predicted >= 0:
-				long_only_cash += returns
-				long_only_cash -= slippage
-				long_short_cash += returns
-			elif y_predicted < 0:
-				short_only_cash -= returns
-				short_only_cash -= slippage
-				long_short_cash -= returns
-			long_short_cash -= slippage
-
-		print(f"[{symbol} {model_name}] Number of features: {len(x_training[0])}")
-		print(f"[{symbol} {model_name}] Number of samples: {len(x_training)} for training, {len(x_validation)} for validation")
-		print(f"[{symbol} {model_name}] Buy and hold performance: {get_performance(buy_and_hold_cash)}")
-		print(f"[{symbol} {model_name}] Model performance (long): {get_performance(long_only_cash)}")
-		print(f"[{symbol} {model_name}] Model performance (short): {get_performance(short_only_cash)}")
-		print(f"[{symbol} {model_name}] Model performance (long/short): {get_performance(long_short_cash)}")
-		output[model_name] = long_short_cash
+			long = y_predicted >= 0
+			evaluation_results.submit_trade(returns, long)
+			last_trade_time = time
+		evaluation_results.print_stats(symbol, model_name)
+		output[model_name] = evaluation_results
 
 	return output
 
-def format_currency(value):
+def format_currency(value: float) -> str:
 	if value >= 0:
 		return f"${value:,.2f}"
 	else:
 		return f"(${abs(value):,.2f})"
 
-def get_performance(cash):
-	return f"{cash / Configuration.INITIAL_CASH - 1:+.2%}"
-
 def main() -> None:
-	if len(sys.argv) != 6:
+	if len(sys.argv) != 7:
 		print("Usage:")
-		print(f"python {sys.argv[0]} <symbols> <start date> <split date> <end date> <max p-value>")
+		print(f"python {sys.argv[0]} <symbols> <start date> <split date> <end date> <rebalance frequency> <feature limit>")
+		print(f"Supported rebalance frequencies: daily, weekly, monthly")
 		return
 	symbols = [x.strip() for x in sys.argv[1].split(",")]
 	start = pd.Timestamp(sys.argv[2])
 	split = pd.Timestamp(sys.argv[3])
 	end = pd.Timestamp(sys.argv[4])
+	rebalance_frequency = cast(RebalanceFrequency, RebalanceFrequency[sys.argv[5].upper()])
+	feature_limit = int(sys.argv[6])
 	assert start < split < end
-	p_value = float(sys.argv[5])
 	if Configuration.ENABLE_MULTIPROCESSING:
-		arguments = [(symbol, start, split, end, p_value) for symbol in symbols]
+		arguments = [(symbol, start, split, end, rebalance_frequency, feature_limit) for symbol in symbols]
 		with Pool(8) as pool:
-			model_performance = pool.starmap(analyze, arguments)
-			total_model_performance = defaultdict(list)
-			for performance_dict in model_performance:
-				for model_name, cash in performance_dict.items():
-					total_model_performance[model_name].append(cash)
-			print("")
-			all_cash_values = []
-			for model_name, cash_values in total_model_performance.items():
-				cash = mean(cash_values)
-				all_cash_values += cash_values
-				print(f"[{model_name}] Mean performance (long/short): {get_performance(cash)}")
-			print(f"Mean of all models with p-value {p_value}: {get_performance(mean(all_cash_values))}")
+			model_performance = pool.starmap(evaluate, arguments)
 	else:
+		model_performance = []
 		for symbol in symbols:
-			analyze(symbol, start, split, end, p_value)
+			result = evaluate(symbol, start, split, end, rebalance_frequency, feature_limit)
+			model_performance.append(result)
+	total_model_performance = defaultdict(list)
+	for performance_dict in model_performance:
+		for model_name, evaluation_results in performance_dict.items():
+			total_model_performance[model_name].append(evaluation_results)
+	print("")
+	all_model_performance_values = []
+	for model_name, evaluation_results in total_model_performance.items():
+		long_performance_values = mean([x.get_annualized_long_performance() for x in evaluation_results])
+		short_performance_values = mean([x.get_annualized_short_performance() for x in evaluation_results])
+		all_performance_values = mean([x.get_annualized_performance() for x in evaluation_results])
+		all_model_performance_values.append(all_performance_values)
+		print(f"[{model_name}] Mean performance (long): {EvaluationResults.get_performance_string(long_performance_values)}")
+		print(f"[{model_name}] Mean performance (short): {EvaluationResults.get_performance_string(short_performance_values)}")
+		print(f"[{model_name}] Mean performance (all): {EvaluationResults.get_performance_string(all_performance_values)}")
+	mean_model_performance = mean(all_model_performance_values)
+	print(f"Mean of all models with a feature limit of {feature_limit}: {EvaluationResults.get_performance_string(mean_model_performance)}")
 
 if __name__ == "__main__":
 	main()

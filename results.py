@@ -1,11 +1,109 @@
 from collections import defaultdict
-from typing import Any
+from typing import Any, Final
 
 import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score, precision_score, f1_score as get_f1_score, confusion_matrix
 
-from enums import FeatureCategory
+from enums import FeatureCategory, RebalanceFrequency
+from config import Configuration
+
+class EvaluationResults:
+	DAYS_PER_YEAR: Final[float] = 365.25
+	TRADING_DAYS_PER_YEAR: Final[int] = 252
+	DAYS_PER_WEEK: Final[int] = 7
+	MONTHS_PER_YEAR: Final[int] = 12
+
+	buy_and_hold_performance: float
+	long_cash: float
+	short_cash: float
+	all_cash: float
+	all_trades: int
+	long_trades: int
+	short_trades: int
+	slippage: float
+	start: pd.Timestamp
+	end: pd.Timestamp
+	rebalance_frequency: RebalanceFrequency
+
+	def __init__(self, buy_and_hold_performance: float, slippage: float, start: pd.Timestamp, end: pd.Timestamp, rebalance_frequency: RebalanceFrequency):
+		assert slippage >= 0
+		assert start < end
+		self.buy_and_hold_performance = buy_and_hold_performance
+		self.all_cash = Configuration.INITIAL_CASH
+		self.long_cash = Configuration.INITIAL_CASH
+		self.short_cash = Configuration.INITIAL_CASH
+		self.all_trades = 0
+		self.long_trades = 0
+		self.short_trades = 0
+		self.slippage = slippage
+		self.start = start
+		self.end = end
+		self.rebalance_frequency = rebalance_frequency
+
+	def submit_trade(self, returns: float, long: bool) -> None:
+		if long:
+			self.long_cash += returns
+			self.long_cash -= self.slippage
+			self.all_cash += returns
+			self.long_trades += 1
+		else:
+			self.short_cash -= returns
+			self.short_cash -= self.slippage
+			self.all_cash -= returns
+			self.short_trades += 1
+		self.all_trades += 1
+		self.all_cash -= self.slippage
+
+	def print_stats(self, symbol: str, model_name: str) -> None:
+		days = (self.end - self.start).days
+		buy_and_hold_performance = self.buy_and_hold_performance**(self.DAYS_PER_YEAR / float(days))
+		long_performance = self.get_annualized_long_performance()
+		short_performance = self.get_annualized_short_performance()
+		total_performance = self.get_annualized_performance()
+		print(f"[{symbol} {model_name}] Buy and hold performance: {self.get_performance_string(buy_and_hold_performance)}")
+		print(f"[{symbol} {model_name}] Model performance (long): {self.get_performance_string(long_performance)}")
+		print(f"[{symbol} {model_name}] Model performance (short): {self.get_performance_string(short_performance)}")
+		print(f"[{symbol} {model_name}] Model performance (all): {self.get_performance_string(total_performance)}")
+
+	def get_annualized_long_performance(self):
+		performance = self._get_cash_performance(self.long_cash, self.long_trades)
+		annualized_performance = self._get_annualized_performance(performance)
+		return annualized_performance
+
+	def get_annualized_short_performance(self):
+		performance = self._get_cash_performance(self.short_cash, self.short_trades)
+		annualized_performance = self._get_annualized_performance(performance)
+		return annualized_performance
+
+	def get_annualized_performance(self):
+		performance = self._get_cash_performance(self.all_cash, self.all_trades)
+		annualized_performance = self._get_annualized_performance(performance)
+		return annualized_performance
+
+	@staticmethod
+	def get_performance_string(performance: float) -> str:
+		return f"{performance - 1:+.2%}"
+
+	@staticmethod
+	def _get_cash_performance(cash: float, trades: int | None = None) -> float:
+		performance = cash / Configuration.INITIAL_CASH - 1
+		if trades is not None and trades > 0 and Configuration.DAILY_VALIDATION:
+			performance /= trades
+		performance += 1
+		return performance
+
+	def _get_annualized_performance(self, performance):
+		match self.rebalance_frequency:
+			case RebalanceFrequency.DAILY:
+				annualized_performance = performance ** self.TRADING_DAYS_PER_YEAR
+			case RebalanceFrequency.WEEKLY:
+				annualized_performance = performance ** (self.DAYS_PER_YEAR / self.DAYS_PER_WEEK)
+			case RebalanceFrequency.MONTHLY:
+				annualized_performance = performance ** self.MONTHS_PER_YEAR
+			case _:
+				raise Exception("Unknown rebalance frequency")
+		return annualized_performance
 
 class TrainingResults:
 	precision_values: list[float]

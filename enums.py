@@ -39,3 +39,8 @@ class FeatureFrequency(Enum):
 	WEEKLY: Final[int] = 1
 	MONTHLY: Final[int] = 2
 	QUARTERLY: Final[int] = 3
+
+class RebalanceFrequency(Enum):
+	DAILY: Final[int] = 0
+	WEEKLY: Final[int] = 1
+	MONTHLY: Final[int] = 2

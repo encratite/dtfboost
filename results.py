@@ -10,9 +10,6 @@ from config import Configuration
 
 class EvaluationResults:
 	DAYS_PER_YEAR: Final[float] = 365.25
-	TRADING_DAYS_PER_YEAR: Final[int] = 252
-	DAYS_PER_WEEK: Final[int] = 7
-	MONTHS_PER_YEAR: Final[int] = 12
 
 	buy_and_hold_performance: float
 	long_cash: float
@@ -56,28 +53,36 @@ class EvaluationResults:
 		self.all_cash -= self.slippage
 
 	def print_stats(self, symbol: str, model_name: str) -> None:
-		days = (self.end - self.start).days
-		buy_and_hold_performance = self.buy_and_hold_performance**(self.DAYS_PER_YEAR / float(days))
+		def get_performance_trade_string(performance: float, trades: int) -> str:
+			performance_string = self.get_performance_string(performance)
+			if trades == 0:
+				return f"-"
+			elif trades == 1:
+				return f"{performance_string} (1 trade)"
+			else:
+				return f"{performance_string} ({trades} trades)"
+
+		buy_and_hold_performance = self._get_annualized_performance(self.buy_and_hold_performance)
 		long_performance = self.get_annualized_long_performance()
 		short_performance = self.get_annualized_short_performance()
 		total_performance = self.get_annualized_performance()
 		print(f"[{symbol} {model_name}] Buy and hold performance: {self.get_performance_string(buy_and_hold_performance)}")
-		print(f"[{symbol} {model_name}] Model performance (long): {self.get_performance_string(long_performance)}")
-		print(f"[{symbol} {model_name}] Model performance (short): {self.get_performance_string(short_performance)}")
-		print(f"[{symbol} {model_name}] Model performance (all): {self.get_performance_string(total_performance)}")
+		print(f"[{symbol} {model_name}] Model performance (long): {get_performance_trade_string(long_performance, self.long_trades)}")
+		print(f"[{symbol} {model_name}] Model performance (short): {get_performance_trade_string(short_performance, self.short_trades)}")
+		print(f"[{symbol} {model_name}] Model performance (all): {get_performance_trade_string(total_performance, self.all_trades)}")
 
 	def get_annualized_long_performance(self):
-		performance = self._get_cash_performance(self.long_cash, self.long_trades)
+		performance = self._get_cash_performance(self.long_cash)
 		annualized_performance = self._get_annualized_performance(performance)
 		return annualized_performance
 
 	def get_annualized_short_performance(self):
-		performance = self._get_cash_performance(self.short_cash, self.short_trades)
+		performance = self._get_cash_performance(self.short_cash)
 		annualized_performance = self._get_annualized_performance(performance)
 		return annualized_performance
 
 	def get_annualized_performance(self):
-		performance = self._get_cash_performance(self.all_cash, self.all_trades)
+		performance = self._get_cash_performance(self.all_cash)
 		annualized_performance = self._get_annualized_performance(performance)
 		return annualized_performance
 
@@ -86,23 +91,13 @@ class EvaluationResults:
 		return f"{performance - 1:+.2%}"
 
 	@staticmethod
-	def _get_cash_performance(cash: float, trades: int | None = None) -> float:
-		performance = cash / Configuration.INITIAL_CASH - 1
-		if trades is not None and trades > 0 and Configuration.DAILY_VALIDATION:
-			performance /= trades
-		performance += 1
+	def _get_cash_performance(cash: float) -> float:
+		performance = cash / Configuration.INITIAL_CASH
 		return performance
 
 	def _get_annualized_performance(self, performance):
-		match self.rebalance_frequency:
-			case RebalanceFrequency.DAILY:
-				annualized_performance = performance ** self.TRADING_DAYS_PER_YEAR
-			case RebalanceFrequency.WEEKLY:
-				annualized_performance = performance ** (self.DAYS_PER_YEAR / self.DAYS_PER_WEEK)
-			case RebalanceFrequency.MONTHLY:
-				annualized_performance = performance ** self.MONTHS_PER_YEAR
-			case _:
-				raise Exception("Unknown rebalance frequency")
+		days = (self.end - self.start).days
+		annualized_performance = performance**(self.DAYS_PER_YEAR / days)
 		return annualized_performance
 
 class TrainingResults:

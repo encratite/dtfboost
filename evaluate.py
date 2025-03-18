@@ -80,6 +80,7 @@ def evaluate(
 
 	data = TrainingData(symbol)
 	time_range = [t for t in data.ohlc_series if start <= t < end and not skip_date(t)]
+	validation_times = [time for time in time_range if time >= split]
 
 	match rebalance_frequency:
 		case RebalanceFrequency.DAILY:
@@ -91,8 +92,8 @@ def evaluate(
 		case _:
 			raise Exception("Unknown rebalance frequency value")
 
-	first = data.ohlc_series.get(time_range[0])
-	last = data.ohlc_series.get(time_range[-1])
+	first = data.ohlc_series.get(validation_times[0])
+	last = data.ohlc_series.get(validation_times[-1])
 	buy_and_hold_performance = last.close / first.close
 
 	for time in time_range:
@@ -188,12 +189,11 @@ def evaluate(
 	results_df.to_csv(path, index=False, float_format="%.5f")
 	print(f"Wrote {path}")
 
-	rho_features = sorted(rho_features, key=lambda x: x[0])
+	rho_features = sorted(rho_features, key=lambda x: abs(x[1]), reverse=True)
 	if feature_limit is not None:
 		rho_features = rho_features[:feature_limit]
 	significant_features = [features for features, _rho in rho_features]
 	training_samples = len([time for time in time_range if time < split])
-	validation_times = [time for time in time_range if time >= split]
 	regression_features = [list(row) for row in zip(*significant_features)]
 	x_training = regression_features[:training_samples]
 	x_validation = regression_features[training_samples:]
@@ -224,7 +224,7 @@ def regression_test(
 	broker_fee = asset["broker_fee"]
 	exchange_fee = asset["exchange_fee"]
 	margin = asset["margin"]
-	contracts = min(int(round(10000.0 / margin)), 1)
+	contracts = max(int(round(10000.0 / margin)), 1)
 	slippage = 2 * contracts * (broker_fee + exchange_fee + tick_value)
 	models = [
 		("LinearRegression", LinearRegression()),
@@ -232,9 +232,10 @@ def regression_test(
 		("ElasticNetCV", ElasticNetCV(max_iter=10000, random_state=Configuration.SEED)),
 		("ARDRegression", ARDRegression()),
 		("BayesianRidge", BayesianRidge()),
-		("RandomForestRegressor", RandomForestRegressor(n_estimators=120, random_state=Configuration.SEED)),
+		("RandomForestRegressor", RandomForestRegressor(n_estimators=100, random_state=Configuration.SEED)),
 		("MLPRegressor", MLPRegressor(hidden_layer_sizes=(16, 8, 4), activation="tanh", solver="lbfgs", max_iter=1500, random_state=Configuration.SEED)),
 	]
+	print(f"[{symbol}] Contracts: {contracts}")
 	print(f"[{symbol}] Number of features: {len(x_training[0])}")
 	print(f"[{symbol}] Number of samples: {len(x_training)} for training, {len(x_validation)} for validation")
 	output = {}
@@ -245,7 +246,7 @@ def regression_test(
 		last_trade_time: pd.Timestamp | None = None
 		for i in range(len(y_validation)):
 			time = validation_times[i]
-			if not Configuration.DAILY_VALIDATION and last_trade_time is not None:
+			if last_trade_time is not None:
 				if rebalance_frequency == RebalanceFrequency.WEEKLY:
 					if time.week == last_trade_time.week:
 						continue
@@ -302,8 +303,8 @@ def main() -> None:
 		short_performance_values = mean([x.get_annualized_short_performance() for x in evaluation_results])
 		all_performance_values = mean([x.get_annualized_performance() for x in evaluation_results])
 		all_model_performance_values.append(all_performance_values)
-		print(f"[{model_name}] Mean performance (long): {EvaluationResults.get_performance_string(long_performance_values)}")
-		print(f"[{model_name}] Mean performance (short): {EvaluationResults.get_performance_string(short_performance_values)}")
+		# print(f"[{model_name}] Mean performance (long): {EvaluationResults.get_performance_string(long_performance_values)}")
+		# print(f"[{model_name}] Mean performance (short): {EvaluationResults.get_performance_string(short_performance_values)}")
 		print(f"[{model_name}] Mean performance (all): {EvaluationResults.get_performance_string(all_performance_values)}")
 	mean_model_performance = mean(all_model_performance_values)
 	print(f"Mean of all models with a feature limit of {feature_limit}: {EvaluationResults.get_performance_string(mean_model_performance)}")

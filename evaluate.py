@@ -5,13 +5,14 @@ from collections import defaultdict
 from math import tanh
 from multiprocessing import Pool
 from statistics import mean
-from typing import cast
+from typing import cast, Any
 
 import pandas as pd
 from scipy.stats import spearmanr
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression, ElasticNetCV, LassoCV, ARDRegression, BayesianRidge
 from sklearn.neural_network import MLPRegressor
+from sklearn.preprocessing import StandardScaler
 
 from config import Configuration
 from data import TrainingData
@@ -28,7 +29,7 @@ def evaluate(
 		end: pd.Timestamp,
 		rebalance_frequency: RebalanceFrequency,
 		feature_limit: int | None
-) -> dict[str, EvaluationResults]:
+) -> list[EvaluationResults]:
 	momentum_days = [
 		2,
 		3,
@@ -213,7 +214,7 @@ def regression_test(
 		deltas: list[float],
 		rebalance_frequency: RebalanceFrequency,
 		buy_and_hold_performance: float
-	) -> dict[str, EvaluationResults]:
+	) -> list[EvaluationResults]:
 	assets = pd.read_csv(Configuration.ASSETS_CONFIG)
 	rows = assets[assets["symbol"] == symbol]
 	if len(rows) == 0:
@@ -227,22 +228,38 @@ def regression_test(
 	contracts = max(int(round(10000.0 / margin)), 1)
 	slippage = 2 * contracts * (broker_fee + exchange_fee + tick_value)
 	models = [
-		("LinearRegression", LinearRegression()),
-		("LassoCV", LassoCV(max_iter=10000, random_state=Configuration.SEED)),
-		("ElasticNetCV", ElasticNetCV(max_iter=10000, random_state=Configuration.SEED)),
-		("ARDRegression", ARDRegression()),
-		("BayesianRidge", BayesianRidge()),
-		("RandomForestRegressor", RandomForestRegressor(n_estimators=100, random_state=Configuration.SEED)),
-		("MLPRegressor", MLPRegressor(hidden_layer_sizes=(16, 8, 4), activation="tanh", solver="lbfgs", max_iter=1500, random_state=Configuration.SEED)),
+		("LinearRegression", LinearRegression(), {}, False),
+		("LassoCV", LassoCV(max_iter=10000, random_state=Configuration.SEED), {}, False),
+		("ElasticNetCV", ElasticNetCV(max_iter=10000, random_state=Configuration.SEED), {}, False),
+		("ARDRegression", ARDRegression(), {}, False),
+		("BayesianRidge", BayesianRidge(), {}, False),
+		("RandomForestRegressor", RandomForestRegressor(n_estimators=200, criterion="squared_error", max_depth=6, random_state=Configuration.SEED), {}, False),
+		# ("MLPRegressor", MLPRegressor(hidden_layer_sizes=(64, 32), activation="logistic", solver="lbfgs", max_iter=50, random_state=Configuration.SEED), {}, True),
 	]
+
+	# models += get_random_forest_models()
+	models += get_mlp_models()
+
+	scaler = StandardScaler()
+	scaler.fit(x_training)
+
+	x_training_scaled = scaler.transform(x_training, copy=True)
+	x_validation_scaled = scaler.transform(x_validation, copy=True)
+
 	print(f"[{symbol}] Contracts: {contracts}")
 	print(f"[{symbol}] Number of features: {len(x_training[0])}")
 	print(f"[{symbol}] Number of samples: {len(x_training)} for training, {len(x_validation)} for validation")
-	output = {}
-	for model_name, model in models:
-		evaluation_results = EvaluationResults(buy_and_hold_performance, slippage, validation_times[0], validation_times[-1], rebalance_frequency)
-		model.fit(x_training, y_training)
-		predictions = model.predict(x_validation)
+	output = []
+	for model_name, model, parameters, enable_scaling in models:
+		evaluation_results = EvaluationResults(buy_and_hold_performance, slippage, validation_times[0], validation_times[-1], rebalance_frequency, model_name, parameters)
+		if enable_scaling:
+			x_training_selected = x_training_scaled
+			x_validation_selected = x_validation_scaled
+		else:
+			x_training_selected = x_training
+			x_validation_selected = x_validation
+		model.fit(x_training_selected, y_training)
+		predictions = model.predict(x_validation_selected)
 		last_trade_time: pd.Timestamp | None = None
 		for i in range(len(y_validation)):
 			time = validation_times[i]
@@ -259,10 +276,98 @@ def regression_test(
 			long = y_predicted >= 0
 			evaluation_results.submit_trade(returns, long)
 			last_trade_time = time
-		evaluation_results.print_stats(symbol, model_name)
-		output[model_name] = evaluation_results
+		evaluation_results.print_stats(symbol)
+		output.append(evaluation_results)
 
 	return output
+
+def get_random_forest_models() -> list[Any]:
+	n_estimators_values = [
+		# 50,
+		# 100,
+		# 150,
+		200
+	]
+	criterion_values = [
+		"squared_error",
+		# "absolute_error",
+		# "friedman_mse"
+	]
+	max_depths_values = [
+		# 3,
+		# 4,
+		# 5,
+		6,
+		7,
+		8
+	]
+	models = []
+	for n_estimators in n_estimators_values:
+		for criterion in criterion_values:
+			for max_depth in max_depths_values:
+				model = RandomForestRegressor(n_estimators=n_estimators, criterion=criterion, max_depth=max_depth, random_state=Configuration.SEED)
+				parameters = {
+					"n_estimators": n_estimators,
+					"criterion": criterion,
+					"max_depth": max_depth
+				}
+				models.append(("RandomForestRegressor", model, parameters, False))
+	return models
+
+def get_mlp_models():
+	hidden_layer_sizes_values = [
+		# (16, 8),
+		# (16, 8, 4),
+		# (20, 10),
+		(24, 12),
+		# (32, 16),
+		# (32, 16, 8),
+		# (32, 32),
+		# (40, 20),
+		# (48, 24),
+		# (56, 28),
+		# (64, 32),
+		# (64, 64)
+	]
+	activation_values = [
+		# "identity",
+		"logistic",
+		# "tanh",
+		# "relu"
+	]
+	solver_values = [
+		"lbfgs",
+		# "sgd",
+		# "adam"
+	]
+	max_iter_values = [
+		25,
+		30,
+		40,
+		50,
+		# 55,
+		60,
+		# 70,
+		# 100,
+		200,
+		# 500,
+		1000,
+		# 2000
+	]
+	models = []
+	for hidden_layer_sizes in hidden_layer_sizes_values:
+		for activation in activation_values:
+			for solver in solver_values:
+				for max_iter in max_iter_values:
+					parameters = {
+						"hidden_layer_sizes": hidden_layer_sizes,
+						"activation": activation,
+						"solver": solver,
+						"max_iter": max_iter
+					}
+					model = MLPRegressor(hidden_layer_sizes=hidden_layer_sizes, activation=activation, solver=solver, max_iter=max_iter, random_state=Configuration.SEED)
+					models.append(("MLPRegressor", model, parameters, True))
+	return models
 
 def format_currency(value: float) -> str:
 	if value >= 0:
@@ -283,20 +388,33 @@ def main() -> None:
 	rebalance_frequency = cast(RebalanceFrequency, RebalanceFrequency[sys.argv[5].upper()])
 	feature_limit = int(sys.argv[6])
 	assert start < split < end
+	results: list[EvaluationResults]
 	if Configuration.ENABLE_MULTIPROCESSING:
 		arguments = [(symbol, start, split, end, rebalance_frequency, feature_limit) for symbol in symbols]
 		with Pool(8) as pool:
-			model_performance = pool.starmap(evaluate, arguments)
+			nested_results = pool.starmap(evaluate, arguments)
+			results = [item for sublist in nested_results for item in sublist]
 	else:
-		model_performance = []
+		results = []
 		for symbol in symbols:
-			result = evaluate(symbol, start, split, end, rebalance_frequency, feature_limit)
-			model_performance.append(result)
+			results += evaluate(symbol, start, split, end, rebalance_frequency, feature_limit)
 	total_model_performance = defaultdict(list)
-	for performance_dict in model_performance:
-		for model_name, evaluation_results in performance_dict.items():
-			total_model_performance[model_name].append(evaluation_results)
+	for evaluation_results in results:
+		total_model_performance[evaluation_results.model_name].append(evaluation_results)
 	print("")
+	hyperparameters = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+	for evaluation_results in results:
+		for parameter_name, parameter_value in evaluation_results.parameters.items():
+			performance = evaluation_results.get_annualized_performance()
+			hyperparameters[evaluation_results.model_name][parameter_name][parameter_value].append(performance)
+	for model_name, parameter_dict in hyperparameters.items():
+		print(f"Hyperparameters for {model_name}:")
+		for parameter_name, parameter_value_dict in parameter_dict.items():
+			print(f"\t{parameter_name}:")
+			for parameter_value, performance_values in parameter_value_dict.items():
+				mean_performance = mean(performance_values)
+				print(f"\t\t{parameter_value}: {EvaluationResults.get_performance_string(mean_performance)}")
+
 	all_model_performance_values = []
 	for model_name, evaluation_results in total_model_performance.items():
 		long_performance_values = mean([x.get_annualized_long_performance() for x in evaluation_results])
@@ -308,6 +426,7 @@ def main() -> None:
 		print(f"[{model_name}] Mean performance (all): {EvaluationResults.get_performance_string(all_performance_values)}")
 	mean_model_performance = mean(all_model_performance_values)
 	print(f"Mean of all models with a feature limit of {feature_limit}: {EvaluationResults.get_performance_string(mean_model_performance)}")
+	print(f"Symbols evaluated: {symbols}")
 
 if __name__ == "__main__":
 	main()

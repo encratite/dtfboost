@@ -22,8 +22,10 @@ class EvaluationResults:
 	start: pd.Timestamp
 	end: pd.Timestamp
 	rebalance_frequency: RebalanceFrequency
+	model_name: str
+	parameters: dict[str, int | str]
 
-	def __init__(self, buy_and_hold_performance: float, slippage: float, start: pd.Timestamp, end: pd.Timestamp, rebalance_frequency: RebalanceFrequency):
+	def __init__(self, buy_and_hold_performance: float, slippage: float, start: pd.Timestamp, end: pd.Timestamp, rebalance_frequency: RebalanceFrequency, model_name: str, parameters: dict[str, int | str]):
 		assert slippage >= 0
 		assert start < end
 		self.buy_and_hold_performance = buy_and_hold_performance
@@ -37,6 +39,8 @@ class EvaluationResults:
 		self.start = start
 		self.end = end
 		self.rebalance_frequency = rebalance_frequency
+		self.model_name = model_name
+		self.parameters = parameters
 
 	def submit_trade(self, returns: float, long: bool) -> None:
 		if long:
@@ -52,7 +56,12 @@ class EvaluationResults:
 		self.all_trades += 1
 		self.all_cash -= self.slippage
 
-	def print_stats(self, symbol: str, model_name: str) -> None:
+	def get_model_name(self) -> str:
+		strings = [str(x) for x in self.parameters.values()]
+		arguments = ", ".join(strings)
+		return f"{self.model_name}({arguments})"
+
+	def print_stats(self, symbol: str) -> None:
 		def get_performance_trade_string(performance: float, trades: int) -> str:
 			performance_string = self.get_performance_string(performance)
 			if trades == 0:
@@ -66,6 +75,7 @@ class EvaluationResults:
 		long_performance = self.get_annualized_long_performance()
 		short_performance = self.get_annualized_short_performance()
 		total_performance = self.get_annualized_performance()
+		model_name = self.get_model_name()
 		print(f"[{symbol} {model_name}] Buy and hold performance: {self.get_performance_string(buy_and_hold_performance)}")
 		print(f"[{symbol} {model_name}] Model performance (long): {get_performance_trade_string(long_performance, self.long_trades)}")
 		print(f"[{symbol} {model_name}] Model performance (short): {get_performance_trade_string(short_performance, self.short_trades)}")
@@ -96,6 +106,8 @@ class EvaluationResults:
 		return performance
 
 	def _get_annualized_performance(self, performance):
+		if performance <= 0:
+			return 0
 		days = (self.end - self.start).days
 		annualized_performance = performance**(self.DAYS_PER_YEAR / days)
 		return annualized_performance

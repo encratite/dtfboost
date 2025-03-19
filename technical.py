@@ -1,6 +1,8 @@
+from collections import defaultdict
 import os
 from statistics import stdev
 from math import tanh
+from typing import Final
 
 import pandas as pd
 
@@ -10,121 +12,47 @@ from enums import FeatureCategory
 from feature import Feature
 from ohlc import OHLC
 
-def get_technical_features(time: pd.Timestamp, days_since_high_map: dict[pd.Timestamp, int], data: TrainingData) -> tuple[list[Feature], int]:
-	# Offset 0 for the current day, offset 1 for yesterday, to calculate the binary label p(t) / p(t - 1) > 1
-	# Offset 1 also serves as a reference for momentum features
-	offsets = [0, 1]
-	# Number of days to look into the past to calculate relative returns, i.e. p(t - 1) / p(t - n) - 1
-	momentum_days = [
-		2,
-		3,
-		5,
-		10,
-		25,
-		50,
-		100,
-		150,
-		200,
-		250
-	]
-	lagged_momentum_days = [
-		(25, 50),
-		(100, 250)
-	]
-	moving_average_days = [
-		5,
-		10,
-		25,
-		50,
-		100,
-		150,
-		200,
-		250
-	]
-	volatility_days = [
-		5,
-		10,
-		20,
-		40,
-		60
-	]
-	offsets += momentum_days
-	# Technically days_since_x should be part of this calculation
-	ohlc_count = max(max(offsets), max(moving_average_days)) + 1
-	records: list[OHLC] = data.ohlc_series.get(time, count=ohlc_count)
-	today = records[0]
-	# Truncate records to prevent any further access to data from the future
-	records = records[1:]
-	close_values = [ohlc.close for ohlc in records]
-	yesterday = records[0]
-	technical_features: list[Feature] = []
+MOMENTUM_DAYS: Final[list[int]] = [
+	2,
+	3,
+	5,
+	10,
+	25,
+	50,
+	100,
+	150,
+	200,
+	250
+]
 
-	# Price momentum features
-	for days in momentum_days:
-		close = close_values[days - 1]
-		feature_value = get_rate_of_change(yesterday.close, close)
-		feature_name = f"Momentum ({days} Days)"
-		feature = Feature(feature_name, FeatureCategory.TECHNICAL_MOMENTUM, feature_value)
-		technical_features.append(feature)
+LAGGED_MOMENTUM_DAYS: Final[list[tuple[int, int]]] = [
+	(25, 50),
+	(100, 250)
+]
 
-	# Price minus moving average features
-	for days in moving_average_days:
-		moving_average_values = close_values[:days]
-		# Calculate price minus simple moving average
-		moving_average = sum(moving_average_values) / days
-		feature_value = yesterday.close - moving_average
-		feature_name = f"Price Minus Moving Average ({days} Days)"
-		feature = Feature(feature_name, FeatureCategory.TECHNICAL_MOVING_AVERAGE, feature_value)
-		technical_features.append(feature)
+MOVING_AVERAGE_DAYS: Final[list[int]] = [
+	4,
+	5,
+	10,
+	25,
+	50,
+	100,
+	150,
+	200,
+	250
+]
 
-	technical_features += get_days_since_x_features(time, records, days_since_high_map)
+VOLATILITY_DAYS: Final[list[int]] = [
+	4,
+	5,
+	10,
+	20,
+	40,
+	60,
+	120
+]
 
-	# Daily volatility
-	for days in volatility_days:
-		feature_name = f"Volatility ({days} Days)"
-		feature_value = get_daily_volatility(close_values, days)
-		feature = Feature(feature_name, FeatureCategory.TECHNICAL_VOLATILITY, feature_value)
-		technical_features.append(feature)
-
-	# Volume/open interest momentum features
-	# This is problematic because lots of OHLC sources don't consolidate these values until after 4 PM ET
-	for days in momentum_days:
-		record = records[days - 1]
-		feature_value = get_rate_of_change(yesterday.volume, record.volume)
-		feature_name = f"Volume Momentum ({days} Days)"
-		feature = Feature(feature_name, FeatureCategory.TECHNICAL_VOLUME, feature_value)
-		technical_features.append(feature)
-		feature_value = get_rate_of_change(yesterday.open_interest, record.open_interest)
-		feature_name = f"Open Interest ({days} Days)"
-		feature = Feature(feature_name, FeatureCategory.TECHNICAL_OPEN_INTEREST, feature_value)
-		technical_features.append(feature)
-
-	# Experimental indicators
-	feature_name = f"Close-Open"
-	feature_value = get_rate_of_change(yesterday.close, yesterday.open)
-	feature = Feature(feature_name, FeatureCategory.TECHNICAL_EXPERIMENTAL, feature_value)
-	technical_features.append(feature)
-
-	feature_name = f"Close-High-Low"
-	feature_value = yesterday.close / (yesterday.high - yesterday.low)
-	feature = Feature(feature_name, FeatureCategory.TECHNICAL_EXPERIMENTAL, feature_value)
-	technical_features.append(feature)
-
-	for lag1, lag2 in lagged_momentum_days:
-		close1 = close_values[lag1 - 1]
-		close2 = close_values[lag2 - 1]
-		feature_value = get_rate_of_change(close1, close2)
-		feature_name = f"Lagged Momentum ({lag1}, {lag2} Days)"
-		feature = Feature(feature_name, FeatureCategory.TECHNICAL_EXPERIMENTAL, feature_value)
-		technical_features.append(feature)
-
-	# Create a simple binary label for the most recent returns (i.e. comparing today and yesterday)
-	label_rate = get_rate_of_change(today.close, yesterday.close)
-	label = 1 if label_rate > 0 else 0
-	return technical_features, label
-
-def get_days_since_x_features(time: pd.Timestamp | None, records: list[OHLC], days_since_high_map: dict[pd.Timestamp, int] | None) -> list[Feature]:
-	days_since_x = [
+DAYS_SINCE_X = [
 		5,
 		10,
 		20,
@@ -132,6 +60,55 @@ def get_days_since_x_features(time: pd.Timestamp | None, records: list[OHLC], da
 		60,
 		120
 	]
+
+def add_technical_features(today: OHLC, records: list[OHLC], features: defaultdict[str, list[float]]):
+	# add_rate_of_change("Close/Open", today.close, today.open)
+	high_low = today.high - today.low
+	if high_low == 0:
+		high_low = 0.01
+	close_high_low = tanh(today.close / high_low)
+	# features["(Close-Open)/(High-Low)"].append(close_high_low)
+	close_values = [x.close for x in records]
+
+	def add_rate_of_change(name: str, new_value: float, old_value: float) -> None:
+		value = get_rate_of_change(new_value, old_value)
+		features[name].append(value)
+
+	for days in MOMENTUM_DAYS:
+		then = records[days - 1]
+		add_rate_of_change(f"Momentum ({days} Days)", today.close, then.close)
+		add_rate_of_change(f"Volume Momentum ({days} Days)", today.volume, then.volume)
+		add_rate_of_change(f"Open Interest Momentum ({days} Days)", today.open_interest, then.open_interest)
+
+	for days1, days2 in LAGGED_MOMENTUM_DAYS:
+		add_rate_of_change(f"Lagged Momentum ({days1}, {days2} Days)", records[days1 - 1].close, records[days2 - 1].close)
+
+	for days in MOVING_AVERAGE_DAYS:
+		moving_average_values = close_values[:days]
+		moving_average = sum(moving_average_values) / days
+		feature_name = f"Close to Moving Average Ratio ({days} Days)"
+		feature_value = get_rate_of_change(today.close, moving_average)
+		features[feature_name].append(feature_value)
+
+	for days in MOVING_AVERAGE_DAYS:
+		moving_average_values1 = close_values[:days]
+		moving_average1 = sum(moving_average_values1) / days
+		moving_average_values2 = close_values[1:days + 1]
+		moving_average2 = sum(moving_average_values2) / days
+		feature_name = f"Moving Average Rate of Change ({days} Days)"
+		feature_value = get_rate_of_change(moving_average1, moving_average2)
+		features[feature_name].append(feature_value)
+
+	for days in VOLATILITY_DAYS:
+		feature_name = f"Volatility ({days} Days)"
+		feature_value = get_daily_volatility(close_values, days)
+		features[feature_name].append(feature_value)
+
+	days_since_x_features = get_days_since_x_features(None, records, None)
+	for feature in days_since_x_features:
+		features[feature.name].append(feature.value)
+
+def get_days_since_x_features(time: pd.Timestamp | None, records: list[OHLC], days_since_high_map: dict[pd.Timestamp, int] | None) -> list[Feature]:
 	technical_features = []
 	high_values = [ohlc.high for ohlc in records]
 	low_values = [ohlc.low for ohlc in records]
@@ -143,7 +120,7 @@ def get_days_since_x_features(time: pd.Timestamp | None, records: list[OHLC], da
 		technical_features.append(feature)
 
 	# Days since last high within the last n days
-	for days in days_since_x:
+	for days in DAYS_SINCE_X:
 		values = high_values[:days]
 		feature_name = f"Days Since High ({days} Days)"
 		feature_value = values.index(max(values))
@@ -151,7 +128,7 @@ def get_days_since_x_features(time: pd.Timestamp | None, records: list[OHLC], da
 		technical_features.append(feature)
 
 	# Days since last low within the last n days
-	for days in days_since_x:
+	for days in DAYS_SINCE_X:
 		values = low_values[:days]
 		feature_name = f"Days Since Low ({days} Days)"
 		feature_value = values.index(min(values))

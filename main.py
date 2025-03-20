@@ -11,6 +11,18 @@ from enums import RebalanceFrequency
 from results import EvaluationResults
 from evaluate import evaluate
 
+def print_newline():
+	print("")
+
+def get_additional_stats_strings(evaluation_results: list[EvaluationResults]) -> tuple[str, str]:
+	mean_r2_score_training = mean([x.r2_score_training for x in evaluation_results])
+	mean_r2_score_validation = mean([x.r2_score_validation for x in evaluation_results])
+	mean_absolute_error_training = mean([x.mean_absolute_error_training for x in evaluation_results])
+	mean_absolute_error_validation = mean([x.mean_absolute_error_validation for x in evaluation_results])
+	r2_score_string = f"R2 scores: {mean_r2_score_training:.3f} training, {mean_r2_score_validation:.3f} validation"
+	mean_absolute_error_string = f"MAE: {mean_absolute_error_training:.4f} training, {mean_absolute_error_validation:.4f} validation"
+	return r2_score_string, mean_absolute_error_string
+
 def print_hyperparameters(results: list[EvaluationResults]):
 	hyperparameters = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 	for evaluation_results in results:
@@ -22,34 +34,50 @@ def print_hyperparameters(results: list[EvaluationResults]):
 			print(f"\t{parameter_name}:")
 			for parameter_value, evaluation_results in parameter_value_dict.items():
 				performance_values = [x.get_annualized_performance() for x in evaluation_results]
-				mean_r2_score_training = mean([x.r2_score_training for x in evaluation_results])
-				mean_r2_score_validation = mean([x.r2_score_validation for x in evaluation_results])
-				mean_absolute_error_training = mean([x.mean_absolute_error_training for x in evaluation_results])
-				mean_absolute_error_validation = mean([x.mean_absolute_error_validation for x in evaluation_results])
 				mean_performance = mean(performance_values)
 				max_performance = max(performance_values)
 				performance_string = EvaluationResults.get_performance_string(mean_performance)
 				max_performance_string = EvaluationResults.get_performance_string(max_performance)
-				print(f"\t\t{parameter_value}: {performance_string} (max {max_performance_string}; R2 scores: {mean_r2_score_training:.3f} training, {mean_r2_score_validation:.3f} validation; MAE: {mean_absolute_error_training:.4f} training, {mean_absolute_error_validation:.4f} validation)")
+				r2_score_string, mean_absolute_error_string = get_additional_stats_strings(evaluation_results)
+				print(f"\t\t{parameter_value}: {performance_string} (max {max_performance_string}; {r2_score_string}; {mean_absolute_error_string})")
 
-def print_performance(symbols: list[str], feature_limit: int, results: list[EvaluationResults]):
+def print_performance(feature_limit: int, results: list[EvaluationResults]):
 	total_model_performance = defaultdict(list)
 	for evaluation_results in results:
 		total_model_performance[evaluation_results.model_name].append(evaluation_results)
 	all_model_performance_values = []
+	buy_and_hold_performance_values = {}
+	model_performance_by_asset = defaultdict(list)
 	for model_name, evaluation_results in total_model_performance.items():
+		for evaluation_result in evaluation_results:
+			buy_and_hold_performance_values[evaluation_result.symbol] = evaluation_result.buy_and_hold_performance
+			performance = evaluation_result.get_annualized_performance()
+			model_performance_by_asset[evaluation_result.symbol].append(performance)
 		all_performance_values = mean([x.get_annualized_performance() for x in evaluation_results])
-		mean_r2_score_training = mean([x.r2_score_training for x in evaluation_results])
-		mean_r2_score_validation = mean([x.r2_score_validation for x in evaluation_results])
-		mean_absolute_error_training = mean([x.mean_absolute_error_training for x in evaluation_results])
-		mean_absolute_error_validation = mean([x.mean_absolute_error_validation for x in evaluation_results])
 		all_model_performance_values.append(all_performance_values)
-		performance_string = EvaluationResults.get_performance_string(all_performance_values)
-		print(f"[{model_name}] {performance_string} (R2 scores: {mean_r2_score_training:.3f} training, {mean_r2_score_validation:.3f} validation; MAE: {mean_absolute_error_training:.4f} training, {mean_absolute_error_validation:.4f} validation)")
+		mean_model_performance_string = EvaluationResults.get_performance_string(all_performance_values)
+		r2_score_string, mean_absolute_error_string = get_additional_stats_strings(evaluation_results)
+		print(f"[{model_name}] {mean_model_performance_string} ({r2_score_string}; {mean_absolute_error_string}")
+	buy_and_hold_performance = mean(buy_and_hold_performance_values.values())
+	print("Buy and hold performance by asset:")
+	for symbol, performance in buy_and_hold_performance_values.items():
+		mean_model_performance_string = EvaluationResults.get_performance_string(performance)
+		print(f"\t[{symbol}] {mean_model_performance_string}")
+	buy_and_hold_performance_string = EvaluationResults.get_performance_string(buy_and_hold_performance)
+	print("Model performance by asset:")
+	for symbol, performance_values in model_performance_by_asset.items():
+		mean_performance = mean(performance_values)
+		mean_model_performance_string = EvaluationResults.get_performance_string(mean_performance)
+		print(f"\t[{symbol}] {mean_model_performance_string}")
 	mean_model_performance = mean(all_model_performance_values)
-	performance_string = EvaluationResults.get_performance_string(mean_model_performance)
-	print(f"Mean of all models with a feature limit of {feature_limit}: {performance_string}")
-	print(f"Symbols evaluated: {symbols}")
+	mean_model_performance_string = EvaluationResults.get_performance_string(mean_model_performance)
+	print(f"Mean buy and hold performance: {buy_and_hold_performance_string}")
+	print(f"Mean performance of all models: {mean_model_performance_string}")
+	if Configuration.USE_PCA:
+		print(f"Number of PCA features used: {feature_limit}")
+		print(f"Pre-PCA rank filter: {Configuration.PCA_RANK_FILTER}")
+	else:
+		print(f"Number of features used: {feature_limit}")
 
 def main() -> None:
 	if len(sys.argv) != 7:
@@ -74,9 +102,10 @@ def main() -> None:
 		results = []
 		for symbol in symbols:
 			results += evaluate(symbol, start, split, end, rebalance_frequency, feature_limit)
-	print("")
+	print_newline()
 	print_hyperparameters(results)
-	print_performance(symbols, feature_limit, results)
+	print_newline()
+	print_performance(feature_limit, results)
 
 if __name__ == "__main__":
 	main()

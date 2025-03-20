@@ -106,9 +106,9 @@ FRED_CONFIG: list[tuple[str, str, PostProcessing, FeatureCategory, FeatureFreque
 	# CBOE Crude Oil ETF Volatility Index (OVXCLS), nominal, daily
 	("CBOE Crude Oil ETF Volatility Index", "OVXCLS", PostProcessing.NOMINAL_AND_DIFFERENCE, FeatureCategory.ECONOMIC_VOLATILITY, FeatureFrequency.DAILY, 1, "8:36 AM CDT"),
 	# CBOE NASDAQ 100 Volatility Index (VXNCLS), nominal, daily
-	("CBOE NASDAQ 100 Volatility Index", "VXNCLS", PostProcessing.NOMINAL_AND_DIFFERENCE, FeatureCategory.ECONOMIC_VOLATILITY, FeatureFrequency.DAILY, 1, "8:36 AM CDT"),
+	# ("CBOE NASDAQ 100 Volatility Index", "VXNCLS", PostProcessing.NOMINAL_AND_DIFFERENCE, FeatureCategory.ECONOMIC_VOLATILITY, FeatureFrequency.DAILY, 1, "8:36 AM CDT"),
 	# CBOE DJIA Volatility Index (VXDCLS), nominal, daily
-	("CBOE DJIA Volatility Index", "VXDCLS", PostProcessing.NOMINAL_AND_DIFFERENCE, FeatureCategory.ECONOMIC_VOLATILITY, FeatureFrequency.DAILY, 1, "8:36 AM CDT"),
+	# ("CBOE DJIA Volatility Index", "VXDCLS", PostProcessing.NOMINAL_AND_DIFFERENCE, FeatureCategory.ECONOMIC_VOLATILITY, FeatureFrequency.DAILY, 1, "8:36 AM CDT"),
 	# Global price of Swine (PPORKUSDM), nominal, monthly
 	("Global price of Swine", "PPORKUSDM", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, FeatureFrequency.MONTHLY, 41, "2:45 PM CDT"),
 	# Producer Price Index by Commodity: Farm Products: Slaughter Cattle (WPU0131), nominal, monthly

@@ -1,12 +1,11 @@
 import pandas as pd
-from sklearn.linear_model import LinearRegression, ElasticNetCV, LassoCV, ARDRegression, BayesianRidge
 from sklearn.metrics import r2_score as get_r2_score
 from sklearn.metrics import mean_absolute_error as get_mean_absolute_error
 from sklearn.preprocessing import StandardScaler
 
 from config import Configuration
 from enums import RebalanceFrequency
-from models import get_random_forest_models, get_mlp_models
+from models import get_linear_models, get_random_forest_models, get_mlp_models
 from results import EvaluationResults
 
 def perform_regression(
@@ -32,14 +31,7 @@ def perform_regression(
 	margin = asset["margin"]
 	contracts = max(int(round(10000.0 / margin)), 1)
 	slippage = 2 * contracts * (broker_fee + exchange_fee + tick_value)
-	models = [
-		("LinearRegression", LinearRegression(), {}, False),
-		("LassoCV", LassoCV(max_iter=10000, random_state=Configuration.SEED), {}, False),
-		("ElasticNetCV", ElasticNetCV(max_iter=10000, random_state=Configuration.SEED), {}, False),
-		("ARDRegression", ARDRegression(), {}, False),
-		("BayesianRidge", BayesianRidge(), {}, False),
-	]
-
+	models = get_linear_models()
 	if Configuration.MODEL_ENABLE_RANDOM_FOREST:
 		models += get_random_forest_models()
 	if Configuration.MODEL_ENABLE_MLP:
@@ -70,6 +62,7 @@ def perform_regression(
 		mean_absolute_error_training = get_mean_absolute_error(y_training, training_predictions)
 		mean_absolute_error_validation = get_mean_absolute_error(y_validation, validation_predictions)
 		evaluation_results = EvaluationResults(
+			symbol,
 			buy_and_hold_performance,
 			r2_score_training,
 			r2_score_validation,

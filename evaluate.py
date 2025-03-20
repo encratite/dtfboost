@@ -2,7 +2,8 @@ import os
 from collections import defaultdict
 
 import pandas as pd
-from scipy.stats import spearmanr
+from scipy.stats import spearmanr, pearsonr
+from sklearn.decomposition import PCA
 
 from config import Configuration
 from data import TrainingData
@@ -84,17 +85,21 @@ def evaluate(
 	for feature_name, feature_values in features.items():
 		if all(x == feature_values[0] for x in feature_values):
 			continue
-		significance = spearmanr(returns, feature_values) # type: ignore
+		if Configuration.USE_PEARSON:
+			significance = pearsonr(returns, feature_values)
+		else:
+			significance = spearmanr(returns, feature_values) # type: ignore
 		results.append((feature_name, significance.statistic, significance.pvalue))
 		rho_features.append((feature_values, significance.statistic))
 	results = sorted(results, key=lambda x: abs(x[1]), reverse=True)
-	results_df = pd.DataFrame(results, columns=["Feature", "Spearman's rho", "p-value"])
+	results_df = pd.DataFrame(results, columns=["Feature", "Pearson" if Configuration.USE_PEARSON else "Spearman", "p-value"])
 	path = os.path.join(Configuration.PLOT_DIRECTORY, "IC", f"{symbol}.csv")
 	results_df.to_csv(path, index=False, float_format="%.5f")
 	print(f"Wrote {path}")
 	rho_features = sorted(rho_features, key=lambda x: abs(x[1]), reverse=True)
 	if feature_limit is not None:
-		rho_features = rho_features[:feature_limit]
+		limit = Configuration.PCA_RANK_FILTER if Configuration.USE_PCA else feature_limit
+		rho_features = rho_features[:limit]
 	significant_features = [features for features, _rho in rho_features]
 	training_samples = len([time for time in time_range if time < split])
 	regression_features = [list(row) for row in zip(*significant_features)]
@@ -103,6 +108,11 @@ def evaluate(
 	y_training = returns[:training_samples]
 	y_validation = returns[training_samples:]
 	deltas_validation = deltas[training_samples:]
+	if Configuration.USE_PCA:
+		pca = PCA(n_components=feature_limit)
+		pca.fit(x_training)
+		x_training = pca.transform(x_training)
+		x_validation = pca.transform(x_validation)
 	output = perform_regression(
 		symbol,
 		x_training,

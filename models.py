@@ -1,12 +1,23 @@
 from typing import Any
 
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression, ElasticNetCV, LassoCV, ARDRegression, BayesianRidge
 from sklearn.neural_network import MLPRegressor
 
 from config import Configuration
 
-def get_random_forest_models() -> list[Any]:
+def get_linear_models() -> list[tuple[str, Any, dict, bool]]:
+	return [
+		("LinearRegression", LinearRegression(), {}, False),
+		("LassoCV", LassoCV(max_iter=10000, random_state=Configuration.SEED), {}, False),
+		("ElasticNetCV", ElasticNetCV(max_iter=10000, random_state=Configuration.SEED), {}, False),
+		("ARDRegression", ARDRegression(), {}, False),
+		("BayesianRidge", BayesianRidge(), {}, False),
+	]
+
+def get_random_forest_models() -> list[tuple[str, Any, dict, bool]]:
 	n_estimators_values = [
+		# 25,
 		# 50,
 		100,
 		# 150,
@@ -18,12 +29,12 @@ def get_random_forest_models() -> list[Any]:
 		# "friedman_mse"
 	]
 	max_depths_values = [
-		None,
-		# 3,
-		# 4,
-		# 5,
+		# None,
+		3,
+		4,
+		5,
 		6,
-		7,
+		# 7,
 		# 8
 	]
 	models = []
@@ -39,16 +50,21 @@ def get_random_forest_models() -> list[Any]:
 				models.append(("RandomForestRegressor", model, parameters, False))
 	return models
 
-def get_mlp_models():
+def get_mlp_models() -> list[tuple[str, Any, dict, bool]]:
 	hidden_layer_sizes_values = [
-		# (12, 6),
+		(8, 4),
+		(8, 4, 2),
+		(10, 5),
+		(12, 6),
 		# (16, 8),
+		# (16, 8, 4),
 		# (20, 10),
+		(20, 10, 5),
 		# (24, 12),
-		(24, 12, 6),
+		# (24, 12, 6),
 		# (32, 16),
 		# (40, 20),
-		(40, 20, 10),
+		# (40, 20, 10),
 		# (48, 24),
 		# (48, 24, 12),
 		# (56, 28),
@@ -66,7 +82,7 @@ def get_mlp_models():
 		"adam"
 	]
 	max_iter_values = [
-		100
+		100,
 	]
 	learning_rate_init_values = [
 		5e-4,

@@ -8,6 +8,7 @@ from enums import RebalanceFrequency
 class EvaluationResults:
 	DAYS_PER_YEAR: Final[float] = 365.25
 
+	symbol: str
 	buy_and_hold_performance: float
 	r2_score_training: float
 	r2_score_validation: float
@@ -28,6 +29,7 @@ class EvaluationResults:
 
 	def __init__(
 			self,
+			symbol: str,
 			buy_and_hold_performance: float,
 			r2_score_training: float,
 			r2_score_validation: float,
@@ -43,6 +45,7 @@ class EvaluationResults:
 	):
 		assert slippage >= 0
 		assert start < end
+		self.symbol = symbol
 		self.buy_and_hold_performance = buy_and_hold_performance
 		self.r2_score_training = r2_score_training
 		self.r2_score_validation = r2_score_validation

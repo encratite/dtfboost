@@ -16,8 +16,8 @@ def get_barchart_features(time: pd.Timestamp, data: TrainingData) -> list[Featur
 	# Big stock indexes and currency pairs that do not require any additional post-processing
 	symbols = [
 		("DAX Stock Index", "$DAX", FeatureCategory.ECONOMIC_INDEXES),
-		("Dow Jones Industrial Average", "$DJX", FeatureCategory.ECONOMIC_INDEXES),
-		("NASDAQ Composite", "$NASX", FeatureCategory.ECONOMIC_INDEXES),
+		# ("Dow Jones Industrial Average", "$DJX", FeatureCategory.ECONOMIC_INDEXES),
+		# ("NASDAQ Composite", "$NASX", FeatureCategory.ECONOMIC_INDEXES),
 		("Nikkei 225 Index", "$NKY", FeatureCategory.ECONOMIC_INDEXES),
 		("S&P 500 Index", "$SPX", FeatureCategory.ECONOMIC_INDEXES),
 		("Euro Stoxx 50 Index", "$STXE", FeatureCategory.ECONOMIC_INDEXES),

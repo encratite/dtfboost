@@ -1,6 +1,7 @@
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression, ElasticNetCV, LassoCV, ARDRegression, BayesianRidge
+from sklearn.metrics import r2_score as get_r2_score
+from sklearn.metrics import mean_absolute_error as get_mean_absolute_error
 from sklearn.preprocessing import StandardScaler
 
 from config import Configuration
@@ -37,12 +38,12 @@ def perform_regression(
 		("ElasticNetCV", ElasticNetCV(max_iter=10000, random_state=Configuration.SEED), {}, False),
 		("ARDRegression", ARDRegression(), {}, False),
 		("BayesianRidge", BayesianRidge(), {}, False),
-		("RandomForestRegressor", RandomForestRegressor(n_estimators=200, criterion="squared_error", max_depth=6, random_state=Configuration.SEED), {}, False),
-		# ("MLPRegressor", MLPRegressor(hidden_layer_sizes=(64, 32), activation="logistic", solver="lbfgs", max_iter=50, random_state=Configuration.SEED), {}, True),
 	]
 
-	models += get_random_forest_models()
-	models += get_mlp_models()
+	if Configuration.MODEL_ENABLE_RANDOM_FOREST:
+		models += get_random_forest_models()
+	if Configuration.MODEL_ENABLE_MLP:
+		models += get_mlp_models()
 
 	scaler = StandardScaler()
 	scaler.fit(x_training)
@@ -55,7 +56,6 @@ def perform_regression(
 	print(f"[{symbol}] Number of samples: {len(x_training)} for training, {len(x_validation)} for validation")
 	output = []
 	for model_name, model, parameters, enable_scaling in models:
-		evaluation_results = EvaluationResults(buy_and_hold_performance, slippage, validation_times[0], validation_times[-1], rebalance_frequency, model_name, parameters)
 		if enable_scaling:
 			x_training_selected = x_training_scaled
 			x_validation_selected = x_validation_scaled
@@ -63,7 +63,25 @@ def perform_regression(
 			x_training_selected = x_training
 			x_validation_selected = x_validation
 		model.fit(x_training_selected, y_training)
-		predictions = model.predict(x_validation_selected)
+		training_predictions = model.predict(x_training)
+		validation_predictions = model.predict(x_validation_selected)
+		r2_score_training = get_r2_score(y_training, training_predictions)
+		r2_score_validation = get_r2_score(y_validation, validation_predictions)
+		mean_absolute_error_training = get_mean_absolute_error(y_training, training_predictions)
+		mean_absolute_error_validation = get_mean_absolute_error(y_validation, validation_predictions)
+		evaluation_results = EvaluationResults(
+			buy_and_hold_performance,
+			r2_score_training,
+			r2_score_validation,
+			mean_absolute_error_training,
+			mean_absolute_error_validation,
+			slippage,
+			validation_times[0],
+			validation_times[-1],
+			rebalance_frequency,
+			model_name,
+			parameters
+		)
 		last_trade_time: pd.Timestamp | None = None
 		for i in range(len(y_validation)):
 			time = validation_times[i]
@@ -76,7 +94,7 @@ def perform_regression(
 						continue
 			delta = deltas[i]
 			returns = contracts * delta / tick_size * tick_value
-			y_predicted = predictions[i]
+			y_predicted = validation_predictions[i]
 			long = y_predicted >= 0
 			evaluation_results.submit_trade(returns, long)
 			last_trade_time = time

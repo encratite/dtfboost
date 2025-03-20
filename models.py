@@ -41,18 +41,18 @@ def get_random_forest_models() -> list[Any]:
 
 def get_mlp_models():
 	hidden_layer_sizes_values = [
+		# (12, 6),
 		# (16, 8),
-		# (16, 8, 4),
 		# (20, 10),
-		(24, 12),
+		# (24, 12),
+		(24, 12, 6),
 		# (32, 16),
-		# (32, 16, 8),
-		# (32, 32),
 		# (40, 20),
+		(40, 20, 10),
 		# (48, 24),
+		# (48, 24, 12),
 		# (56, 28),
 		# (64, 32),
-		# (64, 64)
 	]
 	activation_values = [
 		# "identity",
@@ -61,35 +61,39 @@ def get_mlp_models():
 		# "relu"
 	]
 	solver_values = [
-		"lbfgs",
+		# "lbfgs",
 		# "sgd",
-		# "adam"
+		"adam"
 	]
 	max_iter_values = [
-		25,
-		30,
-		40,
-		50,
-		# 55,
-		60,
-		# 70,
-		# 100,
-		200,
-		# 500,
-		1000,
-		# 2000
+		100
+	]
+	learning_rate_init_values = [
+		5e-4,
+		# 1e-3,
+		# 5e-3,
 	]
 	models = []
 	for hidden_layer_sizes in hidden_layer_sizes_values:
 		for activation in activation_values:
 			for solver in solver_values:
 				for max_iter in max_iter_values:
-					parameters = {
-						"hidden_layer_sizes": hidden_layer_sizes,
-						"activation": activation,
-						"solver": solver,
-						"max_iter": max_iter
-					}
-					model = MLPRegressor(hidden_layer_sizes=hidden_layer_sizes, activation=activation, solver=solver, max_iter=max_iter, random_state=Configuration.SEED)
-					models.append(("MLPRegressor", model, parameters, True))
+					for learning_rate_init in learning_rate_init_values:
+						parameters = {
+							"hidden_layer_sizes": hidden_layer_sizes,
+							"activation": activation,
+							"solver": solver,
+							"max_iter": max_iter,
+							"learning_rate_init": learning_rate_init
+						}
+						model = MLPRegressor(
+							hidden_layer_sizes=hidden_layer_sizes,
+							activation=activation,
+							solver=solver,
+							max_iter=max_iter,
+							learning_rate_init=learning_rate_init,
+							learning_rate="adaptive",
+							random_state=Configuration.SEED
+						)
+						models.append(("MLPRegressor", model, parameters, True))
 	return models

@@ -15,16 +15,22 @@ def print_hyperparameters(results: list[EvaluationResults]):
 	hyperparameters = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 	for evaluation_results in results:
 		for parameter_name, parameter_value in evaluation_results.parameters.items():
-			performance = evaluation_results.get_annualized_performance()
-			hyperparameters[evaluation_results.model_name][parameter_name][parameter_value].append(performance)
+			hyperparameters[evaluation_results.model_name][parameter_name][parameter_value].append(evaluation_results)
 	for model_name, parameter_dict in hyperparameters.items():
 		print(f"Hyperparameters for {model_name}:")
 		for parameter_name, parameter_value_dict in parameter_dict.items():
 			print(f"\t{parameter_name}:")
-			for parameter_value, performance_values in parameter_value_dict.items():
+			for parameter_value, evaluation_results in parameter_value_dict.items():
+				performance_values = [x.get_annualized_performance() for x in evaluation_results]
+				mean_r2_score_training = mean([x.r2_score_training for x in evaluation_results])
+				mean_r2_score_validation = mean([x.r2_score_validation for x in evaluation_results])
+				mean_absolute_error_training = mean([x.mean_absolute_error_training for x in evaluation_results])
+				mean_absolute_error_validation = mean([x.mean_absolute_error_validation for x in evaluation_results])
 				mean_performance = mean(performance_values)
 				max_performance = max(performance_values)
-				print(f"\t\t{parameter_value}: {EvaluationResults.get_performance_string(mean_performance)} (max {EvaluationResults.get_performance_string(max_performance)})")
+				performance_string = EvaluationResults.get_performance_string(mean_performance)
+				max_performance_string = EvaluationResults.get_performance_string(max_performance)
+				print(f"\t\t{parameter_value}: {performance_string} (max {max_performance_string}; R2 scores: {mean_r2_score_training:.3f} training, {mean_r2_score_validation:.3f} validation; MAE: {mean_absolute_error_training:.4f} training, {mean_absolute_error_validation:.4f} validation)")
 
 def print_performance(symbols: list[str], feature_limit: int, results: list[EvaluationResults]):
 	total_model_performance = defaultdict(list)
@@ -33,9 +39,13 @@ def print_performance(symbols: list[str], feature_limit: int, results: list[Eval
 	all_model_performance_values = []
 	for model_name, evaluation_results in total_model_performance.items():
 		all_performance_values = mean([x.get_annualized_performance() for x in evaluation_results])
+		mean_r2_score_training = mean([x.r2_score_training for x in evaluation_results])
+		mean_r2_score_validation = mean([x.r2_score_validation for x in evaluation_results])
+		mean_absolute_error_training = mean([x.mean_absolute_error_training for x in evaluation_results])
+		mean_absolute_error_validation = mean([x.mean_absolute_error_validation for x in evaluation_results])
 		all_model_performance_values.append(all_performance_values)
 		performance_string = EvaluationResults.get_performance_string(all_performance_values)
-		print(f"[{model_name}] Mean performance (all): {performance_string}")
+		print(f"[{model_name}] {performance_string} (R2 scores: {mean_r2_score_training:.3f} training, {mean_r2_score_validation:.3f} validation; MAE: {mean_absolute_error_training:.4f} training, {mean_absolute_error_validation:.4f} validation)")
 	mean_model_performance = mean(all_model_performance_values)
 	performance_string = EvaluationResults.get_performance_string(mean_model_performance)
 	print(f"Mean of all models with a feature limit of {feature_limit}: {performance_string}")

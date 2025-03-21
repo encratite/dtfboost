@@ -30,7 +30,7 @@ def perform_regression(
 	exchange_fee = asset["exchange_fee"]
 	margin = asset["margin"]
 	contracts = max(int(round(10000.0 / margin)), 1)
-	slippage = 2 * contracts * (broker_fee + exchange_fee + tick_value)
+	slippage = 2 * contracts * (broker_fee + exchange_fee + Configuration.SPREAD_TICKS * tick_value)
 	models = get_linear_models()
 	if Configuration.MODEL_ENABLE_RANDOM_FOREST:
 		models += get_random_forest_models()

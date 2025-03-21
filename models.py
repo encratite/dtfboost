@@ -19,9 +19,11 @@ def get_random_forest_models() -> list[tuple[str, Any, dict, bool]]:
 	n_estimators_values = [
 		# 25,
 		# 50,
+		# 75,
 		100,
+		125,
 		# 150,
-		200
+		# 200
 	]
 	criterion_values = [
 		"squared_error",
@@ -30,10 +32,11 @@ def get_random_forest_models() -> list[tuple[str, Any, dict, bool]]:
 	]
 	max_depths_values = [
 		# None,
+		2,
 		3,
 		4,
 		5,
-		6,
+		# 6,
 		# 7,
 		# 8
 	]

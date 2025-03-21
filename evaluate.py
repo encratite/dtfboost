@@ -1,9 +1,11 @@
 import os
 from collections import defaultdict
+from typing import cast
 
 import pandas as pd
 from scipy.stats import spearmanr, pearsonr
 from sklearn.decomposition import PCA
+from sklearn.feature_selection import SelectKBest, mutual_info_regression, f_regression
 
 from config import Configuration
 from data import TrainingData
@@ -48,7 +50,7 @@ def add_features(
 		returns.append(future_returns)
 		delta = future.close - today.close
 		deltas.append(delta)
-		add_seasonality_features(time, features)
+		# add_seasonality_features(time, features)
 		add_technical_features(today, records, features)
 		fred_features = get_fred_features(time, data)
 		# This static offset is problematic, it should actually be specific to the contract
@@ -66,6 +68,7 @@ def evaluate(
 		rebalance_frequency: RebalanceFrequency,
 		feature_limit: int | None
 ) -> list[EvaluationResults]:
+	assert not (Configuration.USE_PCA and Configuration.SELECT_K_BEST)
 	returns = []
 	deltas = []
 	features: defaultdict[str, list[float]] = defaultdict(list)
@@ -81,7 +84,7 @@ def evaluate(
 	buy_and_hold_performance = last.close / first.close
 	add_features(time_range, rebalance_frequency, data, returns, deltas, features)
 	results: list[tuple[str, float, float]] = []
-	rho_features = []
+	ranked_features = []
 	for feature_name, feature_values in features.items():
 		if all(x == feature_values[0] for x in feature_values):
 			continue
@@ -90,17 +93,17 @@ def evaluate(
 		else:
 			significance = spearmanr(returns, feature_values) # type: ignore
 		results.append((feature_name, significance.statistic, significance.pvalue))
-		rho_features.append((feature_values, significance.statistic))
+		ranked_features.append((feature_values, significance.statistic))
 	results = sorted(results, key=lambda x: abs(x[1]), reverse=True)
 	results_df = pd.DataFrame(results, columns=["Feature", "Pearson" if Configuration.USE_PEARSON else "Spearman", "p-value"])
-	path = os.path.join(Configuration.PLOT_DIRECTORY, "IC", f"{symbol}.csv")
+	path = os.path.join(Configuration.CORRELATION_DIRECTORY, f"{symbol}.csv")
 	results_df.to_csv(path, index=False, float_format="%.5f")
 	print(f"Wrote {path}")
-	rho_features = sorted(rho_features, key=lambda x: abs(x[1]), reverse=True)
-	if feature_limit is not None:
+	ranked_features = sorted(ranked_features, key=lambda x: abs(x[1]), reverse=True)
+	if feature_limit is not None and not Configuration.SELECT_K_BEST:
 		limit = Configuration.PCA_RANK_FILTER if Configuration.USE_PCA else feature_limit
-		rho_features = rho_features[:limit]
-	significant_features = [features for features, _rho in rho_features]
+		ranked_features = ranked_features[:limit]
+	significant_features = [features for features, _statistic in ranked_features]
 	training_samples = len([time for time in time_range if time < split])
 	regression_features = [list(row) for row in zip(*significant_features)]
 	x_training = regression_features[:training_samples]
@@ -113,6 +116,35 @@ def evaluate(
 		pca.fit(x_training)
 		x_training = pca.transform(x_training)
 		x_validation = pca.transform(x_validation)
+	elif Configuration.SELECT_K_BEST:
+		match Configuration.SELECT_K_BEST_SCORE:
+			case "mutual_info_regression":
+				score_func = mutual_info_regression
+			case "f_regression":
+				score_func = f_regression
+			case _:
+				raise Exception(f"Unknown SelectKBest score function: \"{Configuration.SELECT_K_BEST_SCORE}\"")
+		selector = SelectKBest(score_func=score_func, k=feature_limit)
+		selector.fit(x_training, y_training)
+		support = cast(list[bool], selector.get_support())
+		selected_features = []
+		feature_names = list(features.keys())
+		for i in range(len(selector.scores_)):
+			if support[i]:
+				score = selector.scores_[i]
+				feature_name = feature_names[i]
+				selected_features.append((feature_name, score))
+		selected_features = sorted(selected_features, key=lambda x: x[1], reverse=True)
+		selected_features_dict = {
+			"Feature": [feature_name for feature_name, _score in selected_features],
+			"Score": [score for _feature_name, score in selected_features]
+		}
+		selected_features_path = os.path.join(Configuration.SELECTION_DIRECTORY, f"{symbol}-{feature_limit}.csv")
+		selected_features_df = pd.DataFrame.from_dict(selected_features_dict)
+		selected_features_df.to_csv(selected_features_path, index=False)
+		print(f"Wrote {selected_features_path}")
+		x_training = selector.transform(x_training)
+		x_validation = selector.transform(x_validation)
 	output = perform_regression(
 		symbol,
 		x_training,

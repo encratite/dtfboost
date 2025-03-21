@@ -41,7 +41,7 @@ def print_hyperparameters(results: list[EvaluationResults]):
 				r2_score_string, mean_absolute_error_string = get_additional_stats_strings(evaluation_results)
 				print(f"\t\t{parameter_value}: {performance_string} (max {max_performance_string}; {r2_score_string}; {mean_absolute_error_string})")
 
-def print_performance(feature_limit: int, results: list[EvaluationResults]):
+def print_performance(feature_limit: int, results: list[EvaluationResults], start: pd.Timestamp, split: pd.Timestamp, end: pd.Timestamp):
 	total_model_performance = defaultdict(list)
 	for evaluation_results in results:
 		total_model_performance[evaluation_results.model_name].append(evaluation_results)
@@ -76,8 +76,14 @@ def print_performance(feature_limit: int, results: list[EvaluationResults]):
 	if Configuration.USE_PCA:
 		print(f"Number of PCA features used: {feature_limit}")
 		print(f"Pre-PCA rank filter: {Configuration.PCA_RANK_FILTER}")
+	elif Configuration.SELECT_K_BEST:
+		print(f"Number of best features selected using \"{Configuration.SELECT_K_BEST_SCORE}\": {feature_limit}")
 	else:
 		print(f"Number of features used: {feature_limit}")
+	print(f"Timestamps: start {get_date_string(start)}, split {get_date_string(split)}, end {get_date_string(end)}")
+
+def get_date_string(time: pd.Timestamp):
+	return time.strftime("%Y-%m-%d")
 
 def main() -> None:
 	if len(sys.argv) != 7:
@@ -105,7 +111,7 @@ def main() -> None:
 	print_newline()
 	print_hyperparameters(results)
 	print_newline()
-	print_performance(feature_limit, results)
+	print_performance(feature_limit, results, start, split, end)
 
 if __name__ == "__main__":
 	main()

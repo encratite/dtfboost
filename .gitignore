@@ -1,4 +1,6 @@
 .idea
 __pycache__
 plot
+correlation
+selection
 config.py

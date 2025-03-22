@@ -10,7 +10,7 @@ def get_fred_features(start: pd.Timestamp, time: pd.Timestamp, data: TrainingDat
 	features: list[Feature] = []
 	for feature_name, symbol, post_processing, feature_category, feature_frequency, upload_time in FRED_CONFIG:
 		series = data.fred_data[symbol]
-		if start < series.start - pd.Timedelta(days=361):
+		if start - pd.Timedelta(days=361) < series.start:
 			# Skip features that weren't available at the time
 			# This is a hack to partially integrate series for which only more recent vintages have been made available
 			continue

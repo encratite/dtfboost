@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import cast, TypeVar, Generic, Iterator
+from math import isnan
 
 import pandas as pd
 from sortedcontainers import SortedDict
@@ -10,22 +11,23 @@ from ohlc import OHLC
 T = TypeVar("T")
 
 class TimeSeries(Generic[T]):
+	start: pd.Timestamp
 	_data: SortedDict[pd.Timestamp, T]
 
 	def __init__(self, data: SortedDict[pd.Timestamp, T]):
 		self._data = data
+		self.start = data.keys()[0] # type: ignore
 
 	@staticmethod
-	def read_csv(path: str) -> TimeSeries[float]:
-		df = pd.read_csv(path, parse_dates=[0], date_format="%Y-%m-%d")
-		# Some FRED data files like T10Y2Y lack numeric entries, skip them
-		# This causes the rate of change and difference calculations to use the preceding value instead
-		df = df.dropna(how="any")
+	def read_csv(path: str, is_daily: bool) -> TimeSeries[float]:
+		df = pd.read_csv(path, parse_dates=[0, 2], date_format="%Y-%m-%d")
 		data = SortedDict()
+		time_index = 0 if is_daily else 2
 		for row in df.itertuples(index=False):
-			time = cast(pd.Timestamp, row[0])
+			time = cast(pd.Timestamp, row[time_index])
 			value = cast(float, row[1])
-			data[time] = value
+			if isinstance(value, (int, float)) and not isnan(value):
+				data[time] = value
 		series = TimeSeries(data)
 		return series
 

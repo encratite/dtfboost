@@ -5,6 +5,8 @@ from glob import glob
 from config import Configuration
 from ohlc import OHLC
 from series import TimeSeries
+from fred_config import FRED_CONFIG
+from enums import FeatureFrequency
 
 class TrainingData:
 	ohlc_series: TimeSeries[OHLC]
@@ -32,10 +34,8 @@ class TrainingData:
 
 	def _load_fred_data(self):
 		# Load FRED economic data
-		path = os.path.join(Configuration.FRED_DIRECTORY, "*.csv")
-		paths = glob(path)
 		self.fred_data = {}
-		for path in paths:
-			base_name = os.path.basename(path)
-			symbol = os.path.splitext(base_name)[0]
-			self.fred_data[symbol] = TimeSeries.read_csv(path)
+		for _feature_name, seid, _post_processing, _feature_category, _feature_frequency, _upload_time in FRED_CONFIG:
+			path = os.path.join(Configuration.FRED_DIRECTORY, f"{seid}.csv")
+			is_daily = _feature_frequency == FeatureFrequency.DAILY
+			self.fred_data[seid] = TimeSeries.read_csv(path, is_daily)

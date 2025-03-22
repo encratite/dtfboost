@@ -30,6 +30,7 @@ def get_forecast_days(rebalance_frequency: RebalanceFrequency):
 	return forecast_days
 
 def add_features(
+		start: pd.Timestamp,
 		time_range: list[pd.Timestamp],
 		rebalance_frequency: RebalanceFrequency,
 		data: TrainingData,
@@ -52,7 +53,7 @@ def add_features(
 		deltas.append(delta)
 		# add_seasonality_features(time, features)
 		add_technical_features(today, records, features)
-		fred_features = get_fred_features(time, data)
+		fred_features = get_fred_features(start, time, data)
 		# This static offset is problematic, it should actually be specific to the contract
 		# Closes are calculated at a different time for each Globex code
 		barchart_features = get_barchart_features(time - pd.Timedelta(days=1), data)
@@ -82,7 +83,7 @@ def evaluate(
 	first = data.ohlc_series.get(validation_times[0])
 	last = data.ohlc_series.get(validation_times[-1])
 	buy_and_hold_performance = last.close / first.close
-	add_features(time_range, rebalance_frequency, data, returns, deltas, features)
+	add_features(start, time_range, rebalance_frequency, data, returns, deltas, features)
 	results: list[tuple[str, float, float]] = []
 	ranked_features = []
 	for feature_name, feature_values in features.items():

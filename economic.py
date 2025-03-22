@@ -1,16 +1,9 @@
 import pandas as pd
 
 from data import TrainingData
-from fred import get_fred_features
-from technical import get_rate_of_change
 from enums import FeatureCategory
 from feature import Feature
-
-def get_economic_features(time: pd.Timestamp, data: TrainingData) -> list[Feature]:
-	yesterday = time - pd.Timedelta(days=1)
-	features = get_fred_features(yesterday, data)
-	features += get_barchart_features(yesterday, data)
-	return features
+from technical import get_rate_of_change
 
 def get_barchart_features(time: pd.Timestamp, data: TrainingData) -> list[Feature]:
 	# Big stock indexes and currency pairs that do not require any additional post-processing

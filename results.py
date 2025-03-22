@@ -26,6 +26,7 @@ class EvaluationResults:
 	rebalance_frequency: RebalanceFrequency
 	model_name: str
 	parameters: dict[str, int | str]
+	quantiles: list[float] | None
 
 	def __init__(
 			self,
@@ -63,6 +64,7 @@ class EvaluationResults:
 		self.rebalance_frequency = rebalance_frequency
 		self.model_name = model_name
 		self.parameters = parameters
+		self.quantiles = None
 
 	def submit_trade(self, returns: float, long: bool) -> None:
 		if long:
@@ -105,8 +107,15 @@ class EvaluationResults:
 		print(f"{prefix} Model performance (long): {get_performance_trade_string(long_performance, self.long_trades)}")
 		print(f"{prefix} Model performance (short): {get_performance_trade_string(short_performance, self.short_trades)}")
 		print(f"{prefix} Model performance (all): {get_performance_trade_string(total_performance, self.all_trades)}")
+		print(f"{prefix} Signal/return quantiles: {self.get_quantiles_string(self.quantiles)}")
 
-	def get_annualized_long_performance(self):
+	@staticmethod
+	def get_quantiles_string(quantiles: list[float]) -> str:
+		quantile_string = ", ".join([f"{x:+.2%}" for x in quantiles])
+		quantile_delta = abs(quantiles[-1] - quantiles[0])
+		return f"{quantile_string} ({quantile_delta:+.2%})"
+
+	def get_annualized_long_performance(self) -> float:
 		performance = self._get_cash_performance(self.long_cash)
 		annualized_performance = self._get_annualized_performance(performance)
 		return annualized_performance

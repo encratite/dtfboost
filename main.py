@@ -54,10 +54,15 @@ def print_performance(feature_limit: int, results: list[EvaluationResults], star
 			performance = evaluation_result.get_annualized_performance()
 			model_performance_by_asset[evaluation_result.symbol].append(performance)
 		all_performance_values = mean([x.get_annualized_performance() for x in evaluation_results])
+		quantiles = []
+		for i in range(len(evaluation_results[0].quantiles)):
+			mean_values = [x.quantiles[i] for x in evaluation_results]
+			quantiles.append(mean(mean_values))
 		all_model_performance_values.append(all_performance_values)
 		mean_model_performance_string = EvaluationResults.get_performance_string(all_performance_values)
 		r2_score_string, mean_absolute_error_string = get_additional_stats_strings(evaluation_results)
-		print(f"[{model_name}] {mean_model_performance_string} ({r2_score_string}; {mean_absolute_error_string}")
+		quantile_string = EvaluationResults.get_quantiles_string(quantiles)
+		print(f"[{model_name}] {mean_model_performance_string} ({r2_score_string}; {mean_absolute_error_string}; quantiles: {quantile_string})")
 	buy_and_hold_performance = mean(buy_and_hold_performance_values.values())
 	print("Buy and hold performance by asset:")
 	for symbol, performance in buy_and_hold_performance_values.items():

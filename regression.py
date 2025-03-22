@@ -1,4 +1,7 @@
+from statistics import mean
+
 import pandas as pd
+import numpy as np
 from sklearn.metrics import r2_score as get_r2_score
 from sklearn.metrics import mean_absolute_error as get_mean_absolute_error
 from sklearn.preprocessing import StandardScaler
@@ -76,6 +79,7 @@ def perform_regression(
 			parameters
 		)
 		last_trade_time: pd.Timestamp | None = None
+		signal_returns: list[tuple[float, float]] = []
 		for i in range(len(y_validation)):
 			time = validation_times[i]
 			if last_trade_time is not None:
@@ -87,10 +91,16 @@ def perform_regression(
 						continue
 			delta = deltas[i]
 			returns = contracts * delta / tick_size * tick_value
-			y_predicted = validation_predictions[i]
-			long = y_predicted >= 0
+			signal = validation_predictions[i]
+			long = signal >= 0
 			evaluation_results.submit_trade(returns, long)
 			last_trade_time = time
+			actual_returns = y_validation[i]
+			signal_returns.append((signal, actual_returns))
+		signal_returns = sorted(signal_returns, key=lambda x: x[0])
+		sorted_returns = [returns for _signal, returns in signal_returns]
+		grouped_returns = np.array_split(sorted_returns, 5) # type: ignore
+		evaluation_results.quantiles = [mean(x) for x in grouped_returns]
 		evaluation_results.print_stats(symbol)
 		output.append(evaluation_results)
 

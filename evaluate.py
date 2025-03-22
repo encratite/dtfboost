@@ -3,9 +3,11 @@ from collections import defaultdict
 from typing import cast
 
 import pandas as pd
+import numpy as np
 from scipy.stats import spearmanr, pearsonr
 from sklearn.decomposition import PCA
 from sklearn.feature_selection import SelectKBest, mutual_info_regression, f_regression
+from scipy.stats.mstats import winsorize
 
 from config import Configuration
 from data import TrainingData
@@ -105,6 +107,11 @@ def evaluate(
 		limit = Configuration.PCA_RANK_FILTER if Configuration.USE_PCA else feature_limit
 		ranked_features = ranked_features[:limit]
 	significant_features = [features for features, _statistic in ranked_features]
+	if Configuration.WINSORIZE:
+		for i in range(len(significant_features)):
+			features_array = np.array(significant_features[i])
+			winsorized_array = winsorize(features_array, (Configuration.WINSORIZE_LIMIT, Configuration.WINSORIZE_LIMIT))
+			significant_features[i] = winsorized_array.tolist()
 	training_samples = len([time for time in time_range if time < split])
 	regression_features = [list(row) for row in zip(*significant_features)]
 	x_training = regression_features[:training_samples]

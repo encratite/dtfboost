@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from sklearn.metrics import r2_score as get_r2_score
 from sklearn.metrics import mean_absolute_error as get_mean_absolute_error
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler, QuantileTransformer
 
 from config import Configuration
 from enums import RebalanceFrequency
@@ -40,20 +40,35 @@ def perform_regression(
 	if Configuration.MODEL_ENABLE_MLP:
 		models += get_mlp_models()
 
-	scaler = StandardScaler()
-	scaler.fit(x_training)
-
-	x_training_scaled = scaler.transform(x_training, copy=True)
-	x_validation_scaled = scaler.transform(x_validation, copy=True)
+	if Configuration.TRANSFORMER is None:
+		transformer = StandardScaler()
+		transformer.fit(x_training)
+		x_training_transformed = transformer.transform(x_training, copy=True)
+		x_validation_transformed = transformer.transform(x_validation, copy=True)
+	else:
+		match Configuration.TRANSFORMER:
+			case "StandardScaler":
+				transformer = StandardScaler()
+			case "RobustScaler":
+				transformer = RobustScaler()
+			case "QuantileTransformer":
+				transformer = QuantileTransformer()
+			case _:
+				raise Exception("Unknown transformer specified")
+		transformer.fit(x_training)
+		x_training = transformer.transform(x_training)
+		x_validation = transformer.transform(x_validation)
+		x_training_transformed = x_training
+		x_validation_transformed = x_validation
 
 	print(f"[{symbol}] Contracts: {contracts}")
 	print(f"[{symbol}] Number of features: {len(x_training[0])}")
 	print(f"[{symbol}] Number of samples: {len(x_training)} for training, {len(x_validation)} for validation")
 	output = []
-	for model_name, model, parameters, enable_scaling in models:
-		if enable_scaling:
-			x_training_selected = x_training_scaled
-			x_validation_selected = x_validation_scaled
+	for model_name, model, parameters, enable_transformer in models:
+		if Configuration.TRANSFORMER is None and enable_transformer:
+			x_training_selected = x_training_transformed
+			x_validation_selected = x_validation_transformed
 		else:
 			x_training_selected = x_training
 			x_validation_selected = x_validation

@@ -66,7 +66,9 @@ def add_technical_features(today: OHLC, records: list[OHLC], features: defaultdi
 	high_low = today.high - today.low
 	if high_low == 0:
 		high_low = 0.01
-	close_high_low = tanh(today.close / high_low)
+	close_high_low = today.close / high_low
+	if Configuration.USE_TANH:
+		close_high_low = tanh(close_high_low)
 	# features["(Close-Open)/(High-Low)"].append(close_high_low)
 	close_values = [x.close for x in records]
 
@@ -139,7 +141,9 @@ def get_days_since_x_features(time: pd.Timestamp | None, records: list[OHLC], da
 def get_rate_of_change(new_value: float | int, old_value: float | int):
 	if old_value == 0:
 		old_value = 0.01
-	rate = tanh(float(new_value) / float(old_value) - 1.0)
+	rate = float(new_value) / float(old_value) - 1.0
+	if Configuration.USE_TANH:
+		rate = tanh(rate)
 	return rate
 
 def get_days_since_high_map(data: TrainingData) -> dict[pd.Timestamp, int]:

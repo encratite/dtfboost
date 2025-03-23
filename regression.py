@@ -6,9 +6,10 @@ from sklearn.metrics import r2_score as get_r2_score
 from sklearn.metrics import mean_absolute_error as get_mean_absolute_error
 from sklearn.preprocessing import StandardScaler, RobustScaler, QuantileTransformer
 
+from boosting import RegressionWrapper
 from config import Configuration
 from enums import RebalanceFrequency
-from models import get_linear_models, get_random_forest_models, get_mlp_models
+from models import get_linear_models, get_random_forest_models, get_catboost_models, get_mlp_models, get_lightgbm_models, get_xgboost_models
 from results import EvaluationResults
 
 def perform_regression(
@@ -37,6 +38,12 @@ def perform_regression(
 	models = get_linear_models()
 	if Configuration.MODEL_ENABLE_RANDOM_FOREST:
 		models += get_random_forest_models()
+	if Configuration.MODEL_ENABLE_CATBOOST:
+		models += get_catboost_models()
+	if Configuration.MODEL_ENABLE_LIGHTGBM:
+		models += get_lightgbm_models()
+	if Configuration.MODEL_ENABLE_XGBOOST:
+		models += get_xgboost_models()
 	if Configuration.MODEL_ENABLE_MLP:
 		models += get_mlp_models()
 
@@ -72,6 +79,8 @@ def perform_regression(
 		else:
 			x_training_selected = x_training
 			x_validation_selected = x_validation
+		if isinstance(model, RegressionWrapper):
+			model.set_validation(x_validation, y_validation)
 		model.fit(x_training_selected, y_training)
 		training_predictions = model.predict(x_training)
 		validation_predictions = model.predict(x_validation_selected)

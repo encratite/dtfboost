@@ -1,9 +1,13 @@
 from typing import Any
+from itertools import product
 
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression, ElasticNetCV, LassoCV, ARDRegression, BayesianRidge
+import lightgbm as lgb
+from xgboost import XGBRegressor
 from sklearn.neural_network import MLPRegressor
 
+from boosting import CatBoostWrapper
 from config import Configuration
 
 def get_linear_models() -> list[tuple[str, Any, dict, bool]]:
@@ -41,16 +45,230 @@ def get_random_forest_models() -> list[tuple[str, Any, dict, bool]]:
 		# 8
 	]
 	models = []
-	for n_estimators in n_estimators_values:
-		for criterion in criterion_values:
-			for max_depth in max_depths_values:
-				model = RandomForestRegressor(n_estimators=n_estimators, criterion=criterion, max_depth=max_depth, random_state=Configuration.SEED)
-				parameters = {
-					"n_estimators": n_estimators,
-					"criterion": criterion,
-					"max_depth": max_depth
-				}
-				models.append(("RandomForestRegressor", model, parameters, False))
+	combinations = product(
+		n_estimators_values,
+		criterion_values,
+		max_depths_values
+	)
+	for n_estimators, criterion, max_depth in combinations:
+		model = RandomForestRegressor(
+			n_estimators=n_estimators,
+			criterion=criterion,
+			max_depth=max_depth,
+			random_state=Configuration.SEED
+		)
+		parameters = {
+			"n_estimators": n_estimators,
+			"criterion": criterion,
+			"max_depth": max_depth
+		}
+		models.append(("RandomForestRegressor", model, parameters, False))
+	return models
+
+def get_catboost_models() -> list[tuple[str, Any, dict, bool]]:
+	iterations_values = [
+		10,
+		15,
+		20,
+		25,
+		50,
+		# 100,
+		# 1000,
+		# 10000
+	]
+	depth_values = [
+		3,
+		4,
+		5,
+		6,
+		7,
+		# 8,
+	]
+	learning_rate_values = [
+		0.03
+	]
+	early_stopping_rounds_values = [
+		None,
+		# 50
+	]
+	models = []
+	combinations = product(
+		iterations_values,
+		depth_values,
+		learning_rate_values,
+		early_stopping_rounds_values
+	)
+	for iterations, depth, learning_rate, early_stopping_rounds in combinations:
+		model = CatBoostWrapper(
+			iterations=iterations,
+			depth=depth,
+			learning_rate=learning_rate,
+			early_stopping_rounds=early_stopping_rounds,
+			random_seed=Configuration.SEED,
+			logging_level="Silent",
+			allow_writing_files=False
+		)
+		parameters = {
+			"iterations": iterations,
+			"depth": depth,
+			"learning_rate": learning_rate,
+			"early_stopping_rounds": early_stopping_rounds
+		}
+		models.append(("CatBoostRegressor", model, parameters, False))
+	return models
+
+def get_lightgbm_models() -> list[tuple[str, Any, dict, bool]]:
+	n_estimators_values = [
+		# 50,
+		100,
+		# 500,
+	]
+	num_leaves_values = [
+		5,
+		10,
+		15,
+		# 20,
+		# 30,
+		# 40,
+		# 50
+	]
+	min_data_in_leaf_values = [
+		# 5,
+		10,
+		11,
+		12,
+		13,
+		14,
+		15,
+		20,
+		30,
+		# 50
+	]
+	max_depth_values = [
+		# -1,
+		2,
+		3,
+		# 4,
+		# 5,
+		# 6,
+	]
+	num_iterations_values = [
+		# 10,
+		11,
+		12,
+		13,
+		14,
+		15,
+		20,
+		25,
+		30,
+		35,
+		40,
+		45,
+		50,
+	]
+	learning_rate_values = [
+		0.03,
+	]
+	models = []
+	combinations = product(
+		n_estimators_values,
+		num_leaves_values,
+		min_data_in_leaf_values,
+		max_depth_values,
+		num_iterations_values,
+		learning_rate_values
+	)
+	for n_estimators, num_leaves, min_data_in_leaf, max_depth, num_iterations, learning_rate in combinations:
+		parameters = {
+			"n_estimators": n_estimators,
+			"num_leaves": num_leaves,
+			"min_data_in_leaf": min_data_in_leaf,
+			"max_depth": max_depth,
+			"num_iterations": num_iterations,
+			"learning_rate": learning_rate,
+		}
+		model = lgb.LGBMRegressor(
+			n_estimators=n_estimators,
+			num_leaves=num_leaves,
+			min_data_in_leaf=min_data_in_leaf,
+			max_depth=max_depth,
+			num_iterations=num_iterations,
+			learning_rate=learning_rate,
+			verbosity=-1,
+			seed=Configuration.SEED
+		)
+		models.append(("LGBMRegressor", model, parameters, False))
+	return models
+
+def get_xgboost_models() -> list[tuple[str, Any, dict, bool]]:
+	n_estimators_values = [
+		100,
+		200,
+		# 1000,
+		# 10000
+	]
+	max_depth_values = [
+		2,
+		3,
+		# 4,
+		# 5,
+		# 6,
+	]
+	eta_values = [
+		0.1,
+		0.15,
+		0.2,
+		0.25,
+		0.3,
+		0.35,
+		0.4,
+		# 0.45,
+		# 0.5
+	]
+	gamma_values = [0]
+	lambda_values = [1]
+	subsample_values = [
+		# 0.1,
+		# 0.5,
+		# 0.9,
+		# 0.95,
+		1
+	]
+	sampling_method_values = [
+		"uniform",
+		# "gradient_based"
+	]
+	models = []
+	combinations = product(
+		n_estimators_values,
+		max_depth_values,
+		eta_values,
+		gamma_values,
+		lambda_values,
+		subsample_values,
+		sampling_method_values
+	)
+	for n_estimators, max_depth, eta, gamma, lambda_, subsample, sampling_method in combinations:
+		parameters = {
+			"n_estimators": n_estimators,
+			"max_depth": max_depth,
+			"eta": eta,
+			"gamma": gamma,
+			"lambda": lambda_,
+			"subsample": subsample,
+			"sampling_method": sampling_method,
+		}
+		model = XGBRegressor(
+			n_estimators=n_estimators,
+			max_depth=max_depth,
+			eta=eta,
+			gamma=gamma,
+			lambda_=lambda_,
+			subsample=subsample,
+			sampling_method=sampling_method
+		)
+		models.append(("XGBRegressor", model, parameters, False))
 	return models
 
 def get_mlp_models() -> list[tuple[str, Any, dict, bool]]:
@@ -93,26 +311,29 @@ def get_mlp_models() -> list[tuple[str, Any, dict, bool]]:
 		# 5e-3,
 	]
 	models = []
-	for hidden_layer_sizes in hidden_layer_sizes_values:
-		for activation in activation_values:
-			for solver in solver_values:
-				for max_iter in max_iter_values:
-					for learning_rate_init in learning_rate_init_values:
-						parameters = {
-							"hidden_layer_sizes": hidden_layer_sizes,
-							"activation": activation,
-							"solver": solver,
-							"max_iter": max_iter,
-							"learning_rate_init": learning_rate_init
-						}
-						model = MLPRegressor(
-							hidden_layer_sizes=hidden_layer_sizes,
-							activation=activation,
-							solver=solver,
-							max_iter=max_iter,
-							learning_rate_init=learning_rate_init,
-							learning_rate="adaptive",
-							random_state=Configuration.SEED
-						)
-						models.append(("MLPRegressor", model, parameters, True))
+	combinations = product(
+		hidden_layer_sizes_values,
+		activation_values,
+		solver_values,
+		max_iter_values,
+		learning_rate_init_values
+	)
+	for hidden_layer_sizes, activation, solver, max_iter, learning_rate_init in combinations:
+		parameters = {
+			"hidden_layer_sizes": hidden_layer_sizes,
+			"activation": activation,
+			"solver": solver,
+			"max_iter": max_iter,
+			"learning_rate_init": learning_rate_init
+		}
+		model = MLPRegressor(
+			hidden_layer_sizes=hidden_layer_sizes,
+			activation=activation,
+			solver=solver,
+			max_iter=max_iter,
+			learning_rate_init=learning_rate_init,
+			learning_rate="adaptive",
+			random_state=Configuration.SEED
+		)
+		models.append(("MLPRegressor", model, parameters, True))
 	return models

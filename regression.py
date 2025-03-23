@@ -1,4 +1,5 @@
 from statistics import mean
+from collections import deque
 
 import pandas as pd
 import numpy as np
@@ -104,6 +105,7 @@ def perform_regression(
 		)
 		last_trade_time: pd.Timestamp | None = None
 		signal_returns: list[tuple[float, float]] = []
+		signal_history = training_predictions.tolist()[-Configuration.SIGNAL_HISTORY:]
 		for i in range(len(y_validation)):
 			time = validation_times[i]
 			if last_trade_time is not None:
@@ -116,13 +118,28 @@ def perform_regression(
 			delta = deltas[i]
 			returns = contracts * delta / tick_size * tick_value
 			signal = validation_predictions[i]
-			long = signal >= 0
-			evaluation_results.submit_trade(returns, long)
+			long_threshold = np.percentile(signal_history, Configuration.SIGNAL_LONG_PERCENTILE)
+			short_threshold = np.percentile(signal_history, Configuration.SIGNAL_SHORT_PERCENTILE)
+			if signal > long_threshold:
+				# Long trade
+				evaluation_results.submit_trade(returns, True)
+			elif signal < short_threshold:
+				# Short trade
+				evaluation_results.submit_trade(returns, False)
+			else:
+				# No trade
+				pass
+			signal_history.pop(0)
+			signal_history.append(signal)
+			assert len(signal_history) == Configuration.SIGNAL_HISTORY
 			last_trade_time = time
 			actual_returns = y_validation[i]
 			signal_returns.append((signal, actual_returns))
 		signal_returns = sorted(signal_returns, key=lambda x: x[0])
 		sorted_returns = [returns for _signal, returns in signal_returns]
+		if len(sorted_returns) == 0:
+			# Hack to make stats work
+			sorted_returns = [0, 0, 0, 0, 0]
 		grouped_returns = np.array_split(sorted_returns, 5) # type: ignore
 		evaluation_results.quantiles = [mean(x) for x in grouped_returns]
 		evaluation_results.print_stats(symbol)

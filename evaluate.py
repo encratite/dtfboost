@@ -21,7 +21,7 @@ from technical import add_technical_features, get_rate_of_change, MOMENTUM_DAYS
 
 def get_forecast_days(rebalance_frequency: RebalanceFrequency):
 	match rebalance_frequency:
-		case RebalanceFrequency.DAILY | RebalanceFrequency.DAILY_INTERLEAVED:
+		case RebalanceFrequency.DAILY:
 			forecast_days = 1
 		case RebalanceFrequency.WEEKLY:
 			forecast_days = 7
@@ -84,7 +84,6 @@ def evaluate(
 
 	data = TrainingData(symbol)
 	time_range = [t for t in data.ohlc_series if start <= t < end and not skip_date(t)]
-	training_times = [time for time in time_range if time < split]
 	validation_times = [time for time in time_range if time >= split]
 	first = data.ohlc_series.get(validation_times[0])
 	last = data.ohlc_series.get(validation_times[-1])
@@ -163,7 +162,6 @@ def evaluate(
 		y_training,
 		x_validation,
 		y_validation,
-		training_times,
 		validation_times,
 		deltas_validation,
 		rebalance_frequency,

@@ -41,11 +41,6 @@ class FeatureFrequency(Enum):
 	QUARTERLY: Final[int] = 3
 
 class RebalanceFrequency(Enum):
-	# Single model, rebalance daily
 	DAILY: Final[int] = 0
-	# Five models, one per day of the week, rebalance daily
-	DAILY_INTERLEAVED: Final[int] = 1
-	# Single model, rebalance on the first trading day of the week (usually Monday)
-	WEEKLY: Final[int] = 2
-	# Single model, rebalance on the first trading day of the month (usually the 1st - 5th)
-	MONTHLY: Final[int] = 3
+	WEEKLY: Final[int] = 1
+	MONTHLY: Final[int] = 2

@@ -52,13 +52,21 @@ VOLATILITY_DAYS: Final[list[int]] = [
 ]
 
 DAYS_SINCE_X = [
-		5,
-		10,
-		20,
-		40,
-		60,
-		120
-	]
+	5,
+	10,
+	20,
+	40,
+	60,
+	120
+]
+
+UPTICK_DAYS = [
+	5,
+	10,
+	20,
+	40,
+	60
+]
 
 def add_technical_features(today: OHLC, records: list[OHLC], features: defaultdict[str, list[float]]):
 	# add_rate_of_change("Close/Open", today.close, today.open)
@@ -106,6 +114,14 @@ def add_technical_features(today: OHLC, records: list[OHLC], features: defaultdi
 	days_since_x_features = get_days_since_x_features(None, records, None)
 	for feature in days_since_x_features:
 		features[feature.name].append(feature.value)
+
+	for days in UPTICK_DAYS:
+		close_values1 = close_values[:days - 1]
+		close_values2 = close_values[1:days]
+		upticks = [1 for a, b in zip(close_values1, close_values2) if a > b]
+		feature_name = f"Upticks ({days} Days)"
+		feature_value = len(upticks)
+		features[feature_name].append(feature_value)
 
 def get_days_since_x_features(time: pd.Timestamp | None, records: list[OHLC], days_since_high_map: dict[pd.Timestamp, int] | None) -> list[Feature]:
 	technical_features = []

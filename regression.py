@@ -7,11 +7,11 @@ from sklearn.metrics import r2_score as get_r2_score
 from sklearn.metrics import mean_absolute_error as get_mean_absolute_error
 from sklearn.preprocessing import StandardScaler, RobustScaler, QuantileTransformer
 
-from wrapper import RegressionWrapper
 from config import Configuration
 from enums import RebalanceFrequency
 from models import get_linear_models, get_random_forest_models, get_catboost_models, get_mlp_models, get_lightgbm_models, get_xgboost_models, get_autogluon_models
 from results import EvaluationResults
+from interleaved import InterleavedModel
 
 def perform_regression(
 		symbol: str,
@@ -19,6 +19,7 @@ def perform_regression(
 		y_training: list[float],
 		x_validation: list[list[float]],
 		y_validation: list[float],
+		training_times: list[pd.Timestamp],
 		validation_times: list[pd.Timestamp],
 		deltas: list[float],
 		rebalance_frequency: RebalanceFrequency,
@@ -36,19 +37,19 @@ def perform_regression(
 	margin = asset["margin"]
 	contracts = max(int(round(10000.0 / margin)), 1)
 	slippage = 2 * contracts * (broker_fee + exchange_fee + Configuration.SPREAD_TICKS * tick_value)
-	models = get_linear_models()
+	model_definitions = get_linear_models()
 	if Configuration.MODEL_ENABLE_RANDOM_FOREST:
-		models += get_random_forest_models()
+		model_definitions += get_random_forest_models()
 	if Configuration.MODEL_ENABLE_CATBOOST:
-		models += get_catboost_models()
+		model_definitions += get_catboost_models()
 	if Configuration.MODEL_ENABLE_LIGHTGBM:
-		models += get_lightgbm_models()
+		model_definitions += get_lightgbm_models()
 	if Configuration.MODEL_ENABLE_XGBOOST:
-		models += get_xgboost_models()
+		model_definitions += get_xgboost_models()
 	if Configuration.MODEL_ENABLE_MLP:
-		models += get_mlp_models()
+		model_definitions += get_mlp_models()
 	if Configuration.MODEL_ENABLE_AUTOGLUON:
-		models += get_autogluon_models()
+		model_definitions += get_autogluon_models()
 
 	if Configuration.TRANSFORMER is not None:
 		match Configuration.TRANSFORMER:
@@ -61,11 +62,8 @@ def perform_regression(
 			case _:
 				raise Exception("Unknown transformer specified")
 		transformer.fit(x_training)
-		x_training_transformed = transformer.transform(x_training)
-		x_validation_transformed = transformer.transform(x_validation)
-	else:
-		x_training_transformed = x_training
-		x_validation_transformed = y_training
+		x_training = transformer.transform(x_training)
+		x_validation = transformer.transform(x_validation)
 
 	warnings.filterwarnings("ignore", category=UserWarning, module="sklearn.utils.validation")
 	warnings.filterwarnings("ignore", category=UserWarning, module="lightgbm.engine")
@@ -74,18 +72,11 @@ def perform_regression(
 	print(f"[{symbol}] Number of features: {len(x_training[0])}")
 	print(f"[{symbol}] Number of samples: {len(x_training)} for training, {len(x_validation)} for validation")
 	output = []
-	for model_name, model, parameters in models:
-		x_training_selected = x_training_transformed
-		x_validation_selected = x_validation_transformed
-		if isinstance(model, RegressionWrapper):
-			model.set_validation(x_validation, y_validation)
-			if not model.permit_transform():
-				# Relevant for AutoGluon because it appplies its own transforms
-				x_training_selected = x_training
-				x_validation_selected = x_validation
-		model.fit(x_training_selected, y_training)
-		training_predictions = model.predict(x_training)
-		validation_predictions = model.predict(x_validation_selected)
+	for model_name, model_factory, parameters in model_definitions:
+		model = InterleavedModel(model_factory, rebalance_frequency)
+		model.fit(x_training, y_training, training_times)
+		training_predictions = model.predict(x_training, training_times)
+		validation_predictions = model.predict(x_validation, validation_times)
 		r2_score_training = get_r2_score(y_training, training_predictions)
 		r2_score_validation = get_r2_score(y_validation, validation_predictions)
 		mean_absolute_error_training = get_mean_absolute_error(y_training, training_predictions)

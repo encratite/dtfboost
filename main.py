@@ -96,11 +96,17 @@ def main() -> None:
 		print(f"python {sys.argv[0]} <symbols> <start date> <split date> <end date> <rebalance frequency> <feature limit>")
 		print(f"Supported rebalance frequencies: daily, weekly, monthly")
 		return
+	rebalance_frequencies = {
+		"daily": RebalanceFrequency.DAILY,
+		"daily-interleaved": RebalanceFrequency.DAILY_INTERLEAVED,
+		"weekly": RebalanceFrequency.WEEKLY,
+		"monthly": RebalanceFrequency.MONTHLY,
+	}
 	symbols = [x.strip() for x in sys.argv[1].split(",")]
 	start = pd.Timestamp(sys.argv[2])
 	split = pd.Timestamp(sys.argv[3])
 	end = pd.Timestamp(sys.argv[4])
-	rebalance_frequency = cast(RebalanceFrequency, RebalanceFrequency[sys.argv[5].upper()])
+	rebalance_frequency = rebalance_frequencies[sys.argv[5]]
 	feature_limit = int(sys.argv[6])
 	assert start < split < end
 	results: list[EvaluationResults]

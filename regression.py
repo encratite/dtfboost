@@ -1,5 +1,5 @@
 from statistics import mean
-from collections import deque
+import warnings
 
 import pandas as pd
 import numpy as np
@@ -69,6 +69,8 @@ def perform_regression(
 		x_training_transformed = x_training
 		x_validation_transformed = x_validation
 
+	warnings.filterwarnings("ignore", category=UserWarning, module="sklearn.utils.validation")
+
 	print(f"[{symbol}] Contracts: {contracts}")
 	print(f"[{symbol}] Number of features: {len(x_training[0])}")
 	print(f"[{symbol}] Number of samples: {len(x_training)} for training, {len(x_validation)} for validation")
@@ -120,10 +122,10 @@ def perform_regression(
 			signal = validation_predictions[i]
 			long_threshold = np.percentile(signal_history, Configuration.SIGNAL_LONG_PERCENTILE)
 			short_threshold = np.percentile(signal_history, Configuration.SIGNAL_SHORT_PERCENTILE)
-			if signal > long_threshold:
+			if signal > long_threshold and (not Configuration.SIGNAL_SIGN_CHECK or signal > 0):
 				# Long trade
 				evaluation_results.submit_trade(returns, True)
-			elif signal < short_threshold:
+			elif signal < short_threshold and (not Configuration.SIGNAL_SIGN_CHECK or signal < 0):
 				# Short trade
 				evaluation_results.submit_trade(returns, False)
 			else:
@@ -137,10 +139,11 @@ def perform_regression(
 			signal_returns.append((signal, actual_returns))
 		signal_returns = sorted(signal_returns, key=lambda x: x[0])
 		sorted_returns = [returns for _signal, returns in signal_returns]
+		quintiles = 5
 		if len(sorted_returns) == 0:
 			# Hack to make stats work
-			sorted_returns = [0, 0, 0, 0, 0]
-		grouped_returns = np.array_split(sorted_returns, 5) # type: ignore
+			sorted_returns = quintiles * [0]
+		grouped_returns = np.array_split(sorted_returns, quintiles) # type: ignore
 		evaluation_results.quantiles = [mean(x) for x in grouped_returns]
 		evaluation_results.print_stats(symbol)
 		output.append(evaluation_results)

@@ -19,7 +19,7 @@ def get_additional_stats_strings(evaluation_results: list[EvaluationResults]) ->
 	mean_r2_score_validation = mean([x.r2_score_validation for x in evaluation_results])
 	mean_absolute_error_training = mean([x.mean_absolute_error_training for x in evaluation_results])
 	mean_absolute_error_validation = mean([x.mean_absolute_error_validation for x in evaluation_results])
-	r2_score_string = f"R2 scores: {mean_r2_score_training:.3f} training, {mean_r2_score_validation:.3f} validation"
+	r2_score_string = f"R2 scores: training {mean_r2_score_training:.3f}, validation {mean_r2_score_validation:.3f}"
 	mean_absolute_error_string = f"MAE: {mean_absolute_error_training:.4f} training, {mean_absolute_error_validation:.4f} validation"
 	return r2_score_string, mean_absolute_error_string
 

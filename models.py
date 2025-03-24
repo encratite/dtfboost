@@ -148,9 +148,10 @@ def get_lightgbm_models() -> list[tuple[str, Any, dict, bool]]:
 		# -1,
 		2,
 		3,
-		# 4,
-		# 5,
-		# 6,
+		4,
+		5,
+		6,
+		7,
 	]
 	num_iterations_values = [
 		# 10,

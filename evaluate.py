@@ -53,15 +53,18 @@ def add_features(
 		returns.append(future_returns)
 		delta = future.close - today.close
 		deltas.append(delta)
-		# add_seasonality_features(time, features)
-		add_technical_features(today, records, features)
-		fred_features = get_fred_features(start, time, data)
-		# This static offset is problematic, it should actually be specific to the contract
-		# Closes are calculated at a different time for each Globex code
-		barchart_features = get_barchart_features(time - pd.Timedelta(days=1), data)
-		economic_features = fred_features + barchart_features
-		for economic_feature in economic_features:
-			features[economic_feature.name].append(economic_feature.value)
+		if Configuration.ENABLE_SEASONALITY_FEATURES:
+			add_seasonality_features(time, features)
+		if Configuration.ENABLE_TECHNICAL_FEATURES:
+			add_technical_features(today, records, features)
+		if Configuration.ENABLE_ECONOMIC_FEATURES:
+			fred_features = get_fred_features(start, time, data)
+			# This static offset is problematic, it should actually be specific to the contract
+			# Closes are calculated at a different time for each Globex code
+			barchart_features = get_barchart_features(time - pd.Timedelta(days=1), data)
+			economic_features = fred_features + barchart_features
+			for economic_feature in economic_features:
+				features[economic_feature.name].append(economic_feature.value)
 
 def evaluate(
 		symbol: str,

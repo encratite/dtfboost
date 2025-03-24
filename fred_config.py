@@ -127,4 +127,12 @@ FRED_CONFIG: list[tuple[str, str, PostProcessing, FeatureCategory, FeatureFreque
 	("Producer Price Index by Commodity: Ethanol", "WPU06140341", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, FeatureFrequency.MONTHLY, "7:55 AM CDT"),
 	# Global price of Cotton (PCOTTINDUSDM), nominal, monthly
 	("Global price of Cotton", "PCOTTINDUSDM", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, FeatureFrequency.MONTHLY, "2:45 PM CDT"),
+	# Producer Price Index by Commodity: Special Indexes: Copper and Copper Products (WPUSI019011), nominal, monthly
+	("Producer Price Index by Commodit: Copper and Copper Productsy", "WPUSI019011", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, FeatureFrequency.MONTHLY, "7:50 AM CDT"),
+	# Import Price Index (End Use): Copper (IR14220), nominal, monthly
+	("Import Price Index (End Use): Copper", "IR14220", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, FeatureFrequency.MONTHLY, "7:37 AM CDT"),
+	# Export Price Index (Harmonized System): Copper and Articles Thereof (ID74), nominal, monthly
+	("Export Price Index (Harmonized System): Copper and Articles", "ID74", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, FeatureFrequency.MONTHLY, "7:37 AM CDT"),
+	# Import Price Index (Harmonized System): Copper and Articles Thereof (IP74), nominal, monthly
+	("Import Price Index (Harmonized System): Copper and Articles", "IP74", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_GENERAL, FeatureFrequency.MONTHLY, "7:37 AM CDT"),
 ]

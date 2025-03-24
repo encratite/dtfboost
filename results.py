@@ -101,7 +101,7 @@ class EvaluationResults:
 		total_performance = self.get_annualized_performance()
 		model_name = self.get_model_name()
 		prefix = f"[{symbol} {model_name}]"
-		print(f"{prefix} R2 scores: {self.r2_score_training:.3f} training, {self.r2_score_validation:.3f} validation")
+		print(f"{prefix} R2 scores: training {self.r2_score_training:.3f}, validation {self.r2_score_validation:.3f}")
 		print(f"{prefix} Mean absolute error: {self.mean_absolute_error_training:.4f} training, {self.mean_absolute_error_validation:.4f} validation")
 		print(f"{prefix} Buy and hold performance: {self.get_performance_string(buy_and_hold_performance)}")
 		print(f"{prefix} Model performance (long): {get_performance_trade_string(long_performance, self.long_trades)}")

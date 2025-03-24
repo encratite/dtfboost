@@ -7,19 +7,19 @@ import lightgbm as lgb
 from xgboost import XGBRegressor
 from sklearn.neural_network import MLPRegressor
 
-from wrapper import CatBoostWrapper, AutoMLWrapper, AUTOML_SUPPORTED
+from wrapper import CatBoostWrapper, AutoGluonWrapper
 from config import Configuration
 
-def get_linear_models() -> list[tuple[str, Any, dict, bool]]:
+def get_linear_models() -> list[tuple[str, Any, dict]]:
 	return [
-		("LinearRegression", LinearRegression(), {}, False),
-		("LassoCV", LassoCV(max_iter=10000, random_state=Configuration.SEED), {}, False),
-		("ElasticNetCV", ElasticNetCV(max_iter=10000, random_state=Configuration.SEED), {}, False),
-		("ARDRegression", ARDRegression(), {}, False),
-		("BayesianRidge", BayesianRidge(), {}, False),
+		("LinearRegression", LinearRegression(), {}),
+		("LassoCV", LassoCV(max_iter=10000, random_state=Configuration.SEED), {}),
+		("ElasticNetCV", ElasticNetCV(max_iter=10000, random_state=Configuration.SEED), {}),
+		("ARDRegression", ARDRegression(), {}),
+		("BayesianRidge", BayesianRidge(), {}),
 	]
 
-def get_random_forest_models() -> list[tuple[str, Any, dict, bool]]:
+def get_random_forest_models() -> list[tuple[str, Any, dict]]:
 	n_estimators_values = [
 		# 25,
 		# 50,
@@ -62,10 +62,10 @@ def get_random_forest_models() -> list[tuple[str, Any, dict, bool]]:
 			"criterion": criterion,
 			"max_depth": max_depth
 		}
-		models.append(("RandomForestRegressor", model, parameters, False))
+		models.append(("RandomForestRegressor", model, parameters))
 	return models
 
-def get_catboost_models() -> list[tuple[str, Any, dict, bool]]:
+def get_catboost_models() -> list[tuple[str, Any, dict]]:
 	iterations_values = [
 		10,
 		15,
@@ -114,15 +114,10 @@ def get_catboost_models() -> list[tuple[str, Any, dict, bool]]:
 			"learning_rate": learning_rate,
 			"early_stopping_rounds": early_stopping_rounds
 		}
-		models.append(("CatBoostRegressor", model, parameters, False))
+		models.append(("CatBoostRegressor", model, parameters))
 	return models
 
-def get_lightgbm_models() -> list[tuple[str, Any, dict, bool]]:
-	n_estimators_values = [
-		# 50,
-		100,
-		# 500,
-	]
+def get_lightgbm_models() -> list[tuple[str, Any, dict]]:
 	num_leaves_values = [
 		5,
 		10,
@@ -173,16 +168,14 @@ def get_lightgbm_models() -> list[tuple[str, Any, dict, bool]]:
 	]
 	models = []
 	combinations = product(
-		n_estimators_values,
 		num_leaves_values,
 		min_data_in_leaf_values,
 		max_depth_values,
 		num_iterations_values,
 		learning_rate_values
 	)
-	for n_estimators, num_leaves, min_data_in_leaf, max_depth, num_iterations, learning_rate in combinations:
+	for num_leaves, min_data_in_leaf, max_depth, num_iterations, learning_rate in combinations:
 		parameters = {
-			"n_estimators": n_estimators,
 			"num_leaves": num_leaves,
 			"min_data_in_leaf": min_data_in_leaf,
 			"max_depth": max_depth,
@@ -190,7 +183,6 @@ def get_lightgbm_models() -> list[tuple[str, Any, dict, bool]]:
 			"learning_rate": learning_rate,
 		}
 		model = lgb.LGBMRegressor(
-			n_estimators=n_estimators,
 			num_leaves=num_leaves,
 			min_data_in_leaf=min_data_in_leaf,
 			max_depth=max_depth,
@@ -199,10 +191,10 @@ def get_lightgbm_models() -> list[tuple[str, Any, dict, bool]]:
 			verbosity=-1,
 			seed=Configuration.SEED
 		)
-		models.append(("LGBMRegressor", model, parameters, False))
+		models.append(("LGBMRegressor", model, parameters))
 	return models
 
-def get_xgboost_models() -> list[tuple[str, Any, dict, bool]]:
+def get_xgboost_models() -> list[tuple[str, Any, dict]]:
 	n_estimators_values = [
 		100,
 		200,
@@ -269,10 +261,10 @@ def get_xgboost_models() -> list[tuple[str, Any, dict, bool]]:
 			subsample=subsample,
 			sampling_method=sampling_method
 		)
-		models.append(("XGBRegressor", model, parameters, False))
+		models.append(("XGBRegressor", model, parameters))
 	return models
 
-def get_mlp_models() -> list[tuple[str, Any, dict, bool]]:
+def get_mlp_models() -> list[tuple[str, Any, dict]]:
 	hidden_layer_sizes_values = [
 		(8, 4),
 		(8, 4, 2),
@@ -336,12 +328,12 @@ def get_mlp_models() -> list[tuple[str, Any, dict, bool]]:
 			learning_rate="adaptive",
 			random_state=Configuration.SEED
 		)
-		models.append(("MLPRegressor", model, parameters, True))
+		models.append(("MLPRegressor", model, parameters))
 	return models
 
-def get_automl_models() -> list[tuple[str, Any, dict, bool]]:
-	models = []
-	if AUTOML_SUPPORTED:
-		model = AutoMLWrapper()
-		models.append(("AutoML", model, {}, False))
+def get_autogluon_models() -> list[tuple[str, Any, dict]]:
+	model = AutoGluonWrapper()
+	models = [
+		("AutoGluon", model, {})
+	]
 	return models

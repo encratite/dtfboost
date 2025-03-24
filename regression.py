@@ -10,7 +10,7 @@ from sklearn.preprocessing import StandardScaler, RobustScaler, QuantileTransfor
 from wrapper import RegressionWrapper
 from config import Configuration
 from enums import RebalanceFrequency
-from models import get_linear_models, get_random_forest_models, get_catboost_models, get_mlp_models, get_lightgbm_models, get_xgboost_models, get_automl_models
+from models import get_linear_models, get_random_forest_models, get_catboost_models, get_mlp_models, get_lightgbm_models, get_xgboost_models, get_autogluon_models
 from results import EvaluationResults
 
 def perform_regression(
@@ -47,15 +47,10 @@ def perform_regression(
 		models += get_xgboost_models()
 	if Configuration.MODEL_ENABLE_MLP:
 		models += get_mlp_models()
-	if Configuration.MODEL_ENABLE_AUTOML:
-		models += get_automl_models()
+	if Configuration.MODEL_ENABLE_AUTOGLUON:
+		models += get_autogluon_models()
 
-	if Configuration.TRANSFORMER is None:
-		transformer = StandardScaler()
-		transformer.fit(x_training)
-		x_training_transformed = transformer.transform(x_training, copy=True)
-		x_validation_transformed = transformer.transform(x_validation, copy=True)
-	else:
+	if Configuration.TRANSFORMER is not None:
 		match Configuration.TRANSFORMER:
 			case "StandardScaler":
 				transformer = StandardScaler()
@@ -66,26 +61,28 @@ def perform_regression(
 			case _:
 				raise Exception("Unknown transformer specified")
 		transformer.fit(x_training)
-		x_training = transformer.transform(x_training)
-		x_validation = transformer.transform(x_validation)
+		x_training_transformed = transformer.transform(x_training)
+		x_validation_transformed = transformer.transform(x_validation)
+	else:
 		x_training_transformed = x_training
-		x_validation_transformed = x_validation
+		x_validation_transformed = y_training
 
 	warnings.filterwarnings("ignore", category=UserWarning, module="sklearn.utils.validation")
+	warnings.filterwarnings("ignore", category=UserWarning, module="lightgbm.engine")
 
 	print(f"[{symbol}] Contracts: {contracts}")
 	print(f"[{symbol}] Number of features: {len(x_training[0])}")
 	print(f"[{symbol}] Number of samples: {len(x_training)} for training, {len(x_validation)} for validation")
 	output = []
-	for model_name, model, parameters, enable_transformer in models:
-		if Configuration.TRANSFORMER is None and enable_transformer:
-			x_training_selected = x_training_transformed
-			x_validation_selected = x_validation_transformed
-		else:
-			x_training_selected = x_training
-			x_validation_selected = x_validation
+	for model_name, model, parameters in models:
+		x_training_selected = x_training_transformed
+		x_validation_selected = x_validation_transformed
 		if isinstance(model, RegressionWrapper):
 			model.set_validation(x_validation, y_validation)
+			if not model.permit_transform():
+				# Relevant for AutoGluon because it appplies its own transforms
+				x_training_selected = x_training
+				x_validation_selected = x_validation
 		model.fit(x_training_selected, y_training)
 		training_predictions = model.predict(x_training)
 		validation_predictions = model.predict(x_validation_selected)

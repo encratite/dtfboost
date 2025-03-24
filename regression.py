@@ -7,10 +7,10 @@ from sklearn.metrics import r2_score as get_r2_score
 from sklearn.metrics import mean_absolute_error as get_mean_absolute_error
 from sklearn.preprocessing import StandardScaler, RobustScaler, QuantileTransformer
 
-from boosting import RegressionWrapper
+from wrapper import RegressionWrapper
 from config import Configuration
 from enums import RebalanceFrequency
-from models import get_linear_models, get_random_forest_models, get_catboost_models, get_mlp_models, get_lightgbm_models, get_xgboost_models
+from models import get_linear_models, get_random_forest_models, get_catboost_models, get_mlp_models, get_lightgbm_models, get_xgboost_models, get_automl_models
 from results import EvaluationResults
 
 def perform_regression(
@@ -47,6 +47,8 @@ def perform_regression(
 		models += get_xgboost_models()
 	if Configuration.MODEL_ENABLE_MLP:
 		models += get_mlp_models()
+	if Configuration.MODEL_ENABLE_AUTOML:
+		models += get_automl_models()
 
 	if Configuration.TRANSFORMER is None:
 		transformer = StandardScaler()

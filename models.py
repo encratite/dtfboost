@@ -7,7 +7,7 @@ import lightgbm as lgb
 from xgboost import XGBRegressor
 from sklearn.neural_network import MLPRegressor
 
-from boosting import CatBoostWrapper
+from wrapper import CatBoostWrapper, AutoMLWrapper, AUTOML_SUPPORTED
 from config import Configuration
 
 def get_linear_models() -> list[tuple[str, Any, dict, bool]]:
@@ -337,4 +337,11 @@ def get_mlp_models() -> list[tuple[str, Any, dict, bool]]:
 			random_state=Configuration.SEED
 		)
 		models.append(("MLPRegressor", model, parameters, True))
+	return models
+
+def get_automl_models() -> list[tuple[str, Any, dict, bool]]:
+	models = []
+	if AUTOML_SUPPORTED:
+		model = AutoMLWrapper()
+		models.append(("AutoML", model, {}, False))
 	return models

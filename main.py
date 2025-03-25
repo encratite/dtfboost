@@ -2,14 +2,13 @@ import sys
 from collections import defaultdict
 from multiprocessing import Pool, cpu_count
 from statistics import mean
-from typing import cast
 
 import pandas as pd
 
 from config import Configuration
 from enums import RebalanceFrequency
-from results import EvaluationResults
 from evaluate import evaluate
+from results import EvaluationResults
 
 def print_newline():
 	print("")
@@ -41,14 +40,19 @@ def print_hyperparameters(results: list[EvaluationResults]):
 				r2_score_string, mean_absolute_error_string = get_additional_stats_strings(evaluation_results)
 				print(f"\t\t{parameter_value}: {performance_string} (max {max_performance_string}; {r2_score_string}; {mean_absolute_error_string})")
 
-def print_performance(feature_limit: int, results: list[EvaluationResults], start: pd.Timestamp, split: pd.Timestamp, end: pd.Timestamp):
+def print_performance(results: list[EvaluationResults], result_category: str | None):
+	print_newline()
+	if result_category is not None:
+		print(f"Results for category \"{result_category}\":")
 	total_model_performance = defaultdict(list)
 	for evaluation_results in results:
-		total_model_performance[evaluation_results.model_name].append(evaluation_results)
+		total_model_performance[evaluation_results.model_type.value].append(evaluation_results)
 	all_model_performance_values = []
 	buy_and_hold_performance_values = {}
 	model_performance_by_asset = defaultdict(list)
-	for model_name, evaluation_results in total_model_performance.items():
+	sorted_by_model_type = sorted(total_model_performance.keys())
+	for model_type in sorted_by_model_type:
+		evaluation_results = total_model_performance[model_type]
 		for evaluation_result in evaluation_results:
 			buy_and_hold_performance_values[evaluation_result.symbol] = evaluation_result.buy_and_hold_performance
 			performance = evaluation_result.get_annualized_performance()
@@ -62,22 +66,18 @@ def print_performance(feature_limit: int, results: list[EvaluationResults], star
 		mean_model_performance_string = EvaluationResults.get_performance_string(all_performance_values)
 		r2_score_string, mean_absolute_error_string = get_additional_stats_strings(evaluation_results)
 		quantile_string = EvaluationResults.get_quantiles_string(quantiles)
-		print(f"[{model_name}] {mean_model_performance_string} ({r2_score_string}; {mean_absolute_error_string}; quantiles: {quantile_string})")
+		print(f"[{evaluation_results[0].model_name}] {mean_model_performance_string} ({r2_score_string}; {mean_absolute_error_string}; quantiles: {quantile_string})")
 	buy_and_hold_performance = mean(buy_and_hold_performance_values.values())
-	print("Buy and hold performance by asset:")
-	for symbol, performance in buy_and_hold_performance_values.items():
-		mean_model_performance_string = EvaluationResults.get_performance_string(performance)
-		print(f"\t[{symbol}] {mean_model_performance_string}")
 	buy_and_hold_performance_string = EvaluationResults.get_performance_string(buy_and_hold_performance)
-	print("Model performance by asset:")
-	for symbol, performance_values in model_performance_by_asset.items():
-		mean_performance = mean(performance_values)
-		mean_model_performance_string = EvaluationResults.get_performance_string(mean_performance)
-		print(f"\t[{symbol}] {mean_model_performance_string}")
 	mean_model_performance = mean(all_model_performance_values)
 	mean_model_performance_string = EvaluationResults.get_performance_string(mean_model_performance)
-	print(f"Mean buy and hold performance: {buy_and_hold_performance_string}")
+	print(f"Buy and hold performance: {buy_and_hold_performance_string}")
 	print(f"Mean performance of all models: {mean_model_performance_string}")
+
+def print_general_info(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timestamp, feature_limit: int) -> None:
+	print_newline()
+	print(f"Symbol traded: {symbol}")
+	print(f"Timestamps: start {get_date_string(start)}, split {get_date_string(split)}, end {get_date_string(end)}")
 	if Configuration.USE_PCA:
 		print(f"Number of PCA features used: {feature_limit}")
 		print(f"Pre-PCA rank filter: {Configuration.PCA_RANK_FILTER}")
@@ -85,7 +85,6 @@ def print_performance(feature_limit: int, results: list[EvaluationResults], star
 		print(f"Number of best features selected using \"{Configuration.SELECT_K_BEST_SCORE}\": {feature_limit}")
 	else:
 		print(f"Number of features used: {feature_limit}")
-	print(f"Timestamps: start {get_date_string(start)}, split {get_date_string(split)}, end {get_date_string(end)}")
 
 def get_date_string(time: pd.Timestamp):
 	return time.strftime("%Y-%m-%d")
@@ -120,8 +119,15 @@ def main() -> None:
 		results = evaluate(symbol, start, split, end, rebalance_frequency, feature_limit, 0, 1)
 	print_newline()
 	print_hyperparameters(results)
-	print_newline()
-	print_performance(feature_limit, results, start, split, end)
+	category_results: defaultdict[int, list[EvaluationResults]] = defaultdict(list)
+	for evaluation_results in results:
+		category_results[evaluation_results.result_category_id].append(evaluation_results)
+
+	for key, key_evaluation_results in category_results.items():
+		result_category = key_evaluation_results[0].result_category
+		print_performance(key_evaluation_results, result_category)
+
+	print_general_info(symbol, start, split, end, feature_limit)
 
 if __name__ == "__main__":
 	main()

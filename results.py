@@ -4,6 +4,7 @@ import pandas as pd
 
 from config import Configuration
 from enums import RebalanceFrequency
+from models import ModelType
 
 class EvaluationResults:
 	DAYS_PER_YEAR: Final[float] = 365.25
@@ -25,8 +26,11 @@ class EvaluationResults:
 	end: pd.Timestamp
 	rebalance_frequency: RebalanceFrequency
 	model_name: str
+	model_type: ModelType
 	parameters: dict[str, int | str]
 	quantiles: list[float] | None
+	result_category_id: int | None
+	result_category: str | None
 
 	def __init__(
 			self,
@@ -42,7 +46,10 @@ class EvaluationResults:
 			rebalance_frequency:
 			RebalanceFrequency,
 			model_name: str,
-			parameters: dict[str, int | str]
+			model_type: ModelType,
+			parameters: dict[str, int | str],
+			result_category_id: int | None,
+			result_category: str | None
 	):
 		assert slippage >= 0
 		assert start < end
@@ -63,8 +70,11 @@ class EvaluationResults:
 		self.end = end
 		self.rebalance_frequency = rebalance_frequency
 		self.model_name = model_name
+		self.model_type = model_type
 		self.parameters = parameters
 		self.quantiles = None
+		self.result_category_id = result_category_id
+		self.result_category = result_category
 
 	def submit_trade(self, returns: float, long: bool) -> None:
 		if long:

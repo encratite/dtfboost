@@ -1,11 +1,15 @@
 import warnings
+from functools import partial
+from itertools import product
 from statistics import mean
+from typing import Callable
 
 import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_absolute_error as get_mean_absolute_error
 from sklearn.metrics import r2_score as get_r2_score
 from sklearn.preprocessing import StandardScaler, RobustScaler, QuantileTransformer
+from sklearn.exceptions import ConvergenceWarning
 from tqdm import tqdm
 
 from config import Configuration
@@ -20,6 +24,7 @@ def perform_regression(
 		y_training: list[float],
 		x_validation: list[list[float]],
 		y_validation: list[float],
+		training_times: list[pd.Timestamp],
 		validation_times: list[pd.Timestamp],
 		deltas: list[float],
 		rebalance_frequency: RebalanceFrequency,
@@ -62,47 +67,63 @@ def perform_regression(
 			case _:
 				raise Exception("Unknown transformer specified")
 		transformer.fit(x_training)
-		x_training_transformed = transformer.transform(x_training)
-		x_validation_transformed = transformer.transform(x_validation)
-	else:
-		x_training_transformed = x_training
-		x_validation_transformed = y_training
+		x_training = transformer.transform(x_training)
+		x_validation = transformer.transform(x_validation)
 
 	warnings.filterwarnings("ignore", category=UserWarning, module="sklearn.utils.validation")
-	warnings.filterwarnings("ignore", category=UserWarning, module="lightgbm.engine")
+	warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
-	# print(f"[{symbol}] Contracts: {contracts}")
-	# print(f"[{symbol}] Number of features: {len(x_training[0])}")
-	# print(f"[{symbol}] Number of samples: {len(x_training)} for training, {len(x_validation)} for validation")
+	def filter_by_dayofweek(day: int, filter_time: pd.Timestamp) -> bool:
+		return filter_time.dayofweek == day
 
 	output = []
 	tasks = []
+	time_filters = [None]
+	if rebalance_frequency == RebalanceFrequency.DAILY_SPLIT:
+		days = [
+			"Monday",
+			"Tuesday",
+			"Wednesday",
+			"Thursday",
+			"Friday",
+		]
+		time_filters = [(i, days[i], partial(filter_by_dayofweek, i)) for i in range(len(days))]
 	task_id = None
-	for model_name, model, parameters in models:
+	for model_name, model_type, model, parameters in models:
 		if task_id is None:
 			task_id = 0
 		else:
 			task_id += 1
 		if task_id % process_count != process_id:
 			continue
-		tasks.append((model_name, model, parameters))
+		tasks.append((model_name, model_type, model, parameters))
+	tasks = [a + (b,) for a, b in product(tasks, time_filters)]
 
 	if process_id == 0:
 		wrapped_tasks = tqdm(tasks, desc="Evaluating models", colour="green")
 	else:
 		wrapped_tasks = tasks
-	for model_name, model, parameters in wrapped_tasks:
-		x_training_selected = x_training_transformed
-		x_validation_selected = x_validation_transformed
+	for model_name, model_type, model, parameters, time_filter in wrapped_tasks:
+		result_category_id = None
+		result_category = None
+		x_training_filtered = x_training
+		y_training_filtered = y_training
+		x_validation_filtered = x_validation
+		y_validation_filtered = y_validation
+		if time_filter is not None:
+			result_category_id, result_category, time_filter_function = time_filter
+			if Configuration.SPLIT_TRAINING:
+				x_training_filtered, y_training_filtered = filter_data_set(x_training, y_training, training_times, time_filter_function)
+			x_validation_filtered, y_validation_filtered = filter_data_set(x_validation, y_validation, validation_times, time_filter_function)
 		if isinstance(model, RegressionWrapper):
-			model.set_validation(x_validation, y_validation)
-		model.fit(x_training_selected, y_training)
-		training_predictions = model.predict(x_training)
-		validation_predictions = model.predict(x_validation_selected)
-		r2_score_training = get_r2_score(y_training, training_predictions)
-		r2_score_validation = get_r2_score(y_validation, validation_predictions)
-		mean_absolute_error_training = get_mean_absolute_error(y_training, training_predictions)
-		mean_absolute_error_validation = get_mean_absolute_error(y_validation, validation_predictions)
+			model.set_validation(x_validation_filtered, y_validation_filtered)
+		model.fit(x_training_filtered, y_training_filtered)
+		training_predictions = model.predict(x_training_filtered)
+		validation_predictions = model.predict(x_validation_filtered)
+		r2_score_training = get_r2_score(y_training_filtered, training_predictions)
+		r2_score_validation = get_r2_score(y_validation_filtered, validation_predictions)
+		mean_absolute_error_training = get_mean_absolute_error(y_training_filtered, training_predictions)
+		mean_absolute_error_validation = get_mean_absolute_error(y_validation_filtered, validation_predictions)
 		evaluation_results = EvaluationResults(
 			symbol,
 			buy_and_hold_performance,
@@ -115,18 +136,21 @@ def perform_regression(
 			validation_times[-1],
 			rebalance_frequency,
 			model_name,
-			parameters
+			model_type,
+			parameters,
+			result_category_id,
+			result_category
 		)
 		last_trade_time: pd.Timestamp | None = None
 		signal_returns: list[tuple[float, float]] = []
 		signal_history = training_predictions.tolist()[-Configuration.SIGNAL_HISTORY:]
-		for i in range(len(y_validation)):
+		for i in range(len(y_validation_filtered)):
 			time = validation_times[i]
 			if last_trade_time is not None:
 				if rebalance_frequency == RebalanceFrequency.WEEKLY:
 					if time.week == last_trade_time.week:
 						continue
-				if rebalance_frequency == RebalanceFrequency.MONTHLY:
+				elif rebalance_frequency == RebalanceFrequency.MONTHLY:
 					if time.month == last_trade_time.month:
 						continue
 			delta = deltas[i]
@@ -157,7 +181,21 @@ def perform_regression(
 			sorted_returns = quintiles * [0]
 		grouped_returns = np.array_split(sorted_returns, quintiles) # type: ignore
 		evaluation_results.quantiles = [mean(x) for x in grouped_returns]
-		# evaluation_results.print_stats(symbol)
 		output.append(evaluation_results)
 
 	return output
+
+def filter_data_set(
+		x: list[list[float]],
+		y: list[float],
+		time_values: list[pd.Timestamp],
+		time_filter_function: Callable[[pd.Timestamp], bool]
+) -> tuple[list[list[float]], list[float]]:
+	x_output = []
+	y_output = []
+	for i in range(len(x)):
+		time = time_values[i]
+		if time_filter_function(time):
+			x_output.append(x[i])
+			y_output.append(y[i])
+	return x_output, y_output

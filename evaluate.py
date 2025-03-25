@@ -2,12 +2,12 @@ import os
 from collections import defaultdict
 from typing import cast
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 from scipy.stats import spearmanr, pearsonr
+from scipy.stats.mstats import winsorize
 from sklearn.decomposition import PCA
 from sklearn.feature_selection import SelectKBest, mutual_info_regression, f_regression
-from scipy.stats.mstats import winsorize
 
 from config import Configuration
 from data import TrainingData
@@ -21,7 +21,7 @@ from technical import add_technical_features, get_rate_of_change, MOMENTUM_DAYS
 
 def get_forecast_days(rebalance_frequency: RebalanceFrequency):
 	match rebalance_frequency:
-		case RebalanceFrequency.DAILY:
+		case RebalanceFrequency.DAILY | RebalanceFrequency.DAILY_SPLIT:
 			forecast_days = 1
 		case RebalanceFrequency.WEEKLY:
 			forecast_days = 7
@@ -86,6 +86,7 @@ def evaluate(
 
 	data = TrainingData(symbol)
 	time_range = [t for t in data.ohlc_series if start <= t < end and not skip_date(t)]
+	training_times = [time for time in time_range if time < split]
 	validation_times = [time for time in time_range if time >= split]
 	first = data.ohlc_series.get(validation_times[0])
 	last = data.ohlc_series.get(validation_times[-1])
@@ -106,7 +107,6 @@ def evaluate(
 	results_df = pd.DataFrame(results, columns=["Feature", "Pearson" if Configuration.USE_PEARSON else "Spearman", "p-value"])
 	path = os.path.join(Configuration.CORRELATION_DIRECTORY, f"{symbol}.csv")
 	results_df.to_csv(path, index=False, float_format="%.5f")
-	# print(f"Wrote {path}")
 	ranked_features = sorted(ranked_features, key=lambda x: abs(x[1]), reverse=True)
 	if feature_limit is not None and not Configuration.SELECT_K_BEST:
 		limit = Configuration.PCA_RANK_FILTER if Configuration.USE_PCA else feature_limit
@@ -164,6 +164,7 @@ def evaluate(
 		y_training,
 		x_validation,
 		y_validation,
+		training_times,
 		validation_times,
 		deltas_validation,
 		rebalance_frequency,

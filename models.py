@@ -1,5 +1,6 @@
 from itertools import product
-from typing import Any
+from typing import Any, Final
+from enum import Enum
 
 import lightgbm as lgb
 from sklearn.ensemble import RandomForestRegressor
@@ -10,16 +11,27 @@ from xgboost import XGBRegressor
 from config import Configuration
 from wrapper import CatBoostWrapper
 
-def get_linear_models() -> list[tuple[str, Any, dict]]:
+class ModelType(Enum):
+	LINEAR_REGRESSION: Final[int] = 0
+	LASSO_CV: Final[int] = 1
+	ELASTICNET_CV: Final[int] = 2
+	ARD_REGRESSION: Final[int] = 3
+	BAYESIAN_RIDGE: Final[int] = 4
+	RANDOM_FOREST: Final[int] = 5
+	CATBOOST: Final[int] = 6
+	LIGHTGBM: Final[int] = 7
+	XGBOOST: Final[int] = 8
+
+def get_linear_models() -> list[tuple[str, ModelType, Any, dict]]:
 	return [
-		("LinearRegression", LinearRegression(), {}),
-		("LassoCV", LassoCV(max_iter=10000, random_state=Configuration.SEED), {}),
-		("ElasticNetCV", ElasticNetCV(max_iter=10000, random_state=Configuration.SEED), {}),
-		("ARDRegression", ARDRegression(), {}),
-		("BayesianRidge", BayesianRidge(), {}),
+		("LinearRegression", ModelType.LINEAR_REGRESSION, LinearRegression(), {}),
+		("LassoCV", ModelType.LASSO_CV, LassoCV(max_iter=10000, random_state=Configuration.SEED), {}),
+		("ElasticNetCV", ModelType.ELASTICNET_CV, ElasticNetCV(max_iter=10000, random_state=Configuration.SEED), {}),
+		("ARDRegression", ModelType.ARD_REGRESSION, ARDRegression(), {}),
+		("BayesianRidge", ModelType.BAYESIAN_RIDGE, BayesianRidge(), {}),
 	]
 
-def get_random_forest_models() -> list[tuple[str, Any, dict]]:
+def get_random_forest_models() -> list[tuple[str, ModelType, Any, dict]]:
 	n_estimators_values = [
 		# 25,
 		# 50,
@@ -62,10 +74,10 @@ def get_random_forest_models() -> list[tuple[str, Any, dict]]:
 			"criterion": criterion,
 			"max_depth": max_depth
 		}
-		models.append(("RandomForestRegressor", model, parameters))
+		models.append(("RandomForestRegressor", ModelType.RANDOM_FOREST, model, parameters))
 	return models
 
-def get_catboost_models() -> list[tuple[str, Any, dict]]:
+def get_catboost_models() -> list[tuple[str, ModelType, Any, dict]]:
 	iterations_values = [
 		10,
 		15,
@@ -114,10 +126,10 @@ def get_catboost_models() -> list[tuple[str, Any, dict]]:
 			"learning_rate": learning_rate,
 			"early_stopping_rounds": early_stopping_rounds
 		}
-		models.append(("CatBoostRegressor", model, parameters))
+		models.append(("CatBoostRegressor", ModelType.CATBOOST, model, parameters))
 	return models
 
-def get_lightgbm_models() -> list[tuple[str, Any, dict]]:
+def get_lightgbm_models() -> list[tuple[str, ModelType, Any, dict]]:
 	num_leaves_values = [
 		5,
 		10,
@@ -179,10 +191,10 @@ def get_lightgbm_models() -> list[tuple[str, Any, dict]]:
 			verbosity=-1,
 			seed=Configuration.SEED
 		)
-		models.append(("LGBMRegressor", model, parameters))
+		models.append(("LGBMRegressor", ModelType.LIGHTGBM, model, parameters))
 	return models
 
-def get_xgboost_models() -> list[tuple[str, Any, dict]]:
+def get_xgboost_models() -> list[tuple[str, ModelType, Any, dict]]:
 	n_estimators_values = [
 		100,
 		200,
@@ -249,10 +261,10 @@ def get_xgboost_models() -> list[tuple[str, Any, dict]]:
 			subsample=subsample,
 			sampling_method=sampling_method
 		)
-		models.append(("XGBRegressor", model, parameters))
+		models.append(("XGBRegressor", ModelType.XGBOOST, model, parameters))
 	return models
 
-def get_mlp_models() -> list[tuple[str, Any, dict]]:
+def get_mlp_models() -> list[tuple[str, int, Any, dict]]:
 	hidden_layer_sizes_values = [
 		(8, 4),
 		(8, 4, 2),

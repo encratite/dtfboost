@@ -1,14 +1,14 @@
-from typing import Any
 from itertools import product
+from typing import Any
 
+import lightgbm as lgb
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression, ElasticNetCV, LassoCV, ARDRegression, BayesianRidge
-import lightgbm as lgb
-from xgboost import XGBRegressor
 from sklearn.neural_network import MLPRegressor
+from xgboost import XGBRegressor
 
-from wrapper import CatBoostWrapper, AutoGluonWrapper
 from config import Configuration
+from wrapper import CatBoostWrapper
 
 def get_linear_models() -> list[tuple[str, Any, dict]]:
 	return [
@@ -329,11 +329,4 @@ def get_mlp_models() -> list[tuple[str, Any, dict]]:
 			random_state=Configuration.SEED
 		)
 		models.append(("MLPRegressor", model, parameters))
-	return models
-
-def get_autogluon_models() -> list[tuple[str, Any, dict]]:
-	model = AutoGluonWrapper()
-	models = [
-		("AutoGluon", model, {})
-	]
 	return models

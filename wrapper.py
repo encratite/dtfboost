@@ -1,16 +1,11 @@
 from abc import ABC, abstractmethod
-from typing import Any, Final
+from typing import Any
 
 from catboost import CatBoostRegressor, Pool
-from autogluon.tabular import TabularPredictor, TabularDataset
-import pandas as pd
 
 class RegressionWrapper(ABC):
 	def set_validation(self, x_validation: Any, y_validation: Any):
 		pass
-
-	def permit_transform(self):
-		return True
 
 	@abstractmethod
 	def fit(self, x: Any, y: Any) -> None:
@@ -41,25 +36,3 @@ class CatBoostWrapper(RegressionWrapper):
 
 	def predict(self, x: Any) -> Any:
 		return self._model.predict(x)
-
-class AutoGluonWrapper(RegressionWrapper):
-	LABEL_COLUMN: Final[str] = "label"
-
-	_model: Any
-
-	def __init__(self) -> None:
-		self._model = TabularPredictor(label=self.LABEL_COLUMN, problem_type="regression")
-
-	def permit_transform(self):
-		return False
-
-	def fit(self, x: Any, y: Any) -> None:
-		features_df = pd.DataFrame(x)
-		labels_df = pd.Series(y, name=self.LABEL_COLUMN)
-		training_data_df = pd.concat([features_df, labels_df], axis=1)
-		training_data = TabularDataset(training_data_df)
-		self._model.fit(training_data)
-
-	def predict(self, x: Any) -> Any:
-		features_df = pd.DataFrame(x)
-		return self._model.predict(features_df)

@@ -6,6 +6,7 @@ import pandas as pd
 from sklearn.metrics import mean_absolute_error as get_mean_absolute_error
 from sklearn.metrics import r2_score as get_r2_score
 from sklearn.preprocessing import StandardScaler, RobustScaler, QuantileTransformer
+from tqdm import tqdm
 
 from config import Configuration
 from enums import RebalanceFrequency
@@ -22,7 +23,9 @@ def perform_regression(
 		validation_times: list[pd.Timestamp],
 		deltas: list[float],
 		rebalance_frequency: RebalanceFrequency,
-		buy_and_hold_performance: float
+		buy_and_hold_performance: float,
+		process_id: int,
+		process_count: int
 	) -> list[EvaluationResults]:
 	assets = pd.read_csv(Configuration.ASSETS_CONFIG)
 	rows = assets[assets["symbol"] == symbol]
@@ -68,11 +71,27 @@ def perform_regression(
 	warnings.filterwarnings("ignore", category=UserWarning, module="sklearn.utils.validation")
 	warnings.filterwarnings("ignore", category=UserWarning, module="lightgbm.engine")
 
-	print(f"[{symbol}] Contracts: {contracts}")
-	print(f"[{symbol}] Number of features: {len(x_training[0])}")
-	print(f"[{symbol}] Number of samples: {len(x_training)} for training, {len(x_validation)} for validation")
+	# print(f"[{symbol}] Contracts: {contracts}")
+	# print(f"[{symbol}] Number of features: {len(x_training[0])}")
+	# print(f"[{symbol}] Number of samples: {len(x_training)} for training, {len(x_validation)} for validation")
+
 	output = []
+	tasks = []
+	task_id = None
 	for model_name, model, parameters in models:
+		if task_id is None:
+			task_id = 0
+		else:
+			task_id += 1
+		if task_id % process_count != process_id:
+			continue
+		tasks.append((model_name, model, parameters))
+
+	if process_id == 0:
+		wrapped_tasks = tqdm(tasks, desc="Evaluating models", colour="green")
+	else:
+		wrapped_tasks = tasks
+	for model_name, model, parameters in wrapped_tasks:
 		x_training_selected = x_training_transformed
 		x_validation_selected = x_validation_transformed
 		if isinstance(model, RegressionWrapper):
@@ -138,7 +157,7 @@ def perform_regression(
 			sorted_returns = quintiles * [0]
 		grouped_returns = np.array_split(sorted_returns, quintiles) # type: ignore
 		evaluation_results.quantiles = [mean(x) for x in grouped_returns]
-		evaluation_results.print_stats(symbol)
+		# evaluation_results.print_stats(symbol)
 		output.append(evaluation_results)
 
 	return output

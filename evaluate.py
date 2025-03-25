@@ -72,7 +72,9 @@ def evaluate(
 		split: pd.Timestamp,
 		end: pd.Timestamp,
 		rebalance_frequency: RebalanceFrequency,
-		feature_limit: int | None
+		feature_limit: int | None,
+		process_id: int,
+		process_count: int
 ) -> list[EvaluationResults]:
 	assert not (Configuration.USE_PCA and Configuration.SELECT_K_BEST)
 	returns = []
@@ -104,7 +106,7 @@ def evaluate(
 	results_df = pd.DataFrame(results, columns=["Feature", "Pearson" if Configuration.USE_PEARSON else "Spearman", "p-value"])
 	path = os.path.join(Configuration.CORRELATION_DIRECTORY, f"{symbol}.csv")
 	results_df.to_csv(path, index=False, float_format="%.5f")
-	print(f"Wrote {path}")
+	# print(f"Wrote {path}")
 	ranked_features = sorted(ranked_features, key=lambda x: abs(x[1]), reverse=True)
 	if feature_limit is not None and not Configuration.SELECT_K_BEST:
 		limit = Configuration.PCA_RANK_FILTER if Configuration.USE_PCA else feature_limit
@@ -165,6 +167,8 @@ def evaluate(
 		validation_times,
 		deltas_validation,
 		rebalance_frequency,
-		buy_and_hold_performance
+		buy_and_hold_performance,
+		process_id,
+		process_count
 	)
 	return output

@@ -93,26 +93,31 @@ def get_date_string(time: pd.Timestamp):
 def main() -> None:
 	if len(sys.argv) != 7:
 		print("Usage:")
-		print(f"python {sys.argv[0]} <symbols> <start date> <split date> <end date> <rebalance frequency> <feature limit>")
-		print(f"Supported rebalance frequencies: daily, weekly, monthly")
+		print(f"python {sys.argv[0]} <symbol> <start date> <split date> <end date> <rebalance frequency> <feature limit>")
+		print(f"Supported rebalance frequencies: daily, daily-split, weekly, monthly")
 		return
-	symbols = [x.strip() for x in sys.argv[1].split(",")]
+	rebalance_frequency_map = {
+		"daily": RebalanceFrequency.DAILY,
+		"daily-split": RebalanceFrequency.DAILY_SPLIT,
+		"weekly": RebalanceFrequency.WEEKLY,
+		"monthly": RebalanceFrequency.MONTHLY,
+	}
+	symbol = sys.argv[1]
 	start = pd.Timestamp(sys.argv[2])
 	split = pd.Timestamp(sys.argv[3])
 	end = pd.Timestamp(sys.argv[4])
-	rebalance_frequency = cast(RebalanceFrequency, RebalanceFrequency[sys.argv[5].upper()])
+	rebalance_frequency = rebalance_frequency_map[sys.argv[5]]
 	feature_limit = int(sys.argv[6])
 	assert start < split < end
 	results: list[EvaluationResults]
 	if Configuration.ENABLE_MULTIPROCESSING:
-		arguments = [(symbol, start, split, end, rebalance_frequency, feature_limit) for symbol in symbols]
-		with Pool(cpu_count()) as pool:
+		process_count = cpu_count()
+		arguments = [(symbol, start, split, end, rebalance_frequency, feature_limit, process_id, process_count) for process_id in range(process_count)]
+		with Pool(process_count) as pool:
 			nested_results = pool.starmap(evaluate, arguments)
 			results = [item for sublist in nested_results for item in sublist]
 	else:
-		results = []
-		for symbol in symbols:
-			results += evaluate(symbol, start, split, end, rebalance_frequency, feature_limit)
+		results = evaluate(symbol, start, split, end, rebalance_frequency, feature_limit, 0, 1)
 	print_newline()
 	print_hyperparameters(results)
 	print_newline()

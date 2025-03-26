@@ -22,6 +22,20 @@ class ModelType(Enum):
 	LIGHTGBM: Final[int] = 7
 	XGBOOST: Final[int] = 8
 
+def get_models() -> list[tuple[str, ModelType, Any, dict]]:
+	models = get_linear_models()
+	if Configuration.MODEL_ENABLE_RANDOM_FOREST:
+		models += get_random_forest_models()
+	if Configuration.MODEL_ENABLE_CATBOOST:
+		models += get_catboost_models()
+	if Configuration.MODEL_ENABLE_LIGHTGBM:
+		models += get_lightgbm_models()
+	if Configuration.MODEL_ENABLE_XGBOOST:
+		models += get_xgboost_models()
+	if Configuration.MODEL_ENABLE_MLP:
+		models += get_mlp_models()
+	return models
+
 def get_linear_models() -> list[tuple[str, ModelType, Any, dict]]:
 	return [
 		("LinearRegression", ModelType.LINEAR_REGRESSION, LinearRegression(), {}),

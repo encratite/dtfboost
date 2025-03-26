@@ -2,11 +2,13 @@ import os
 import re
 from glob import glob
 
+import pandas as pd
+
 from config import Configuration
+from enums import FeatureFrequency
+from fred_config import FRED_CONFIG
 from ohlc import OHLC
 from series import TimeSeries
-from fred_config import FRED_CONFIG
-from enums import FeatureFrequency
 
 class TrainingData:
 	ohlc_series: TimeSeries[OHLC]
@@ -39,3 +41,30 @@ class TrainingData:
 			path = os.path.join(Configuration.FRED_DIRECTORY, f"{seid}.csv")
 			is_daily = _feature_frequency == FeatureFrequency.DAILY
 			self.fred_data[seid] = TimeSeries.read_csv(path, is_daily)
+
+class RegressionDataset:
+	x_training: list[list[float]]
+	y_training: list[float]
+	x_validation: list[list[float]]
+	y_validation: list[float]
+	training_times: list[pd.Timestamp]
+	validation_times: list[pd.Timestamp]
+	delta_validation: list[float]
+
+	def __init__(
+		self,
+		x_training: list[list[float]],
+		y_training: list[float],
+		x_validation: list[list[float]],
+		y_validation: list[float],
+		training_times: list[pd.Timestamp],
+		validation_times: list[pd.Timestamp],
+		deltas_validation: list[float]
+	):
+		self.x_training = x_training
+		self.y_training = y_training
+		self.x_validation = x_validation
+		self.y_validation = y_validation
+		self.training_times = training_times
+		self.validation_times = validation_times
+		self.delta_validation = deltas_validation

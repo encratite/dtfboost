@@ -74,7 +74,14 @@ def print_performance(results: list[EvaluationResults], result_category: str | N
 	print(f"Buy and hold performance: {buy_and_hold_performance_string}")
 	print(f"Mean performance of all models: {mean_model_performance_string}")
 
-def print_general_info(symbol: str, start: pd.Timestamp, split: pd.Timestamp, end: pd.Timestamp, feature_limit: int) -> None:
+def print_general_info(
+		symbol: str,
+		start: pd.Timestamp,
+		split: pd.Timestamp,
+		end: pd.Timestamp,
+		feature_limit: int,
+		rebalance_frequency_string: str
+) -> None:
 	print_newline()
 	print(f"Symbol traded: {symbol}")
 	print(f"Timestamps: start {get_date_string(start)}, split {get_date_string(split)}, end {get_date_string(end)}")
@@ -85,6 +92,7 @@ def print_general_info(symbol: str, start: pd.Timestamp, split: pd.Timestamp, en
 		print(f"Number of best features selected using \"{Configuration.SELECT_K_BEST_SCORE}\": {feature_limit}")
 	else:
 		print(f"Number of features used: {feature_limit}")
+	print(f"Rebalance frequency: {rebalance_frequency_string}")
 
 def get_date_string(time: pd.Timestamp):
 	return time.strftime("%Y-%m-%d")
@@ -105,7 +113,8 @@ def main() -> None:
 	start = pd.Timestamp(sys.argv[2])
 	split = pd.Timestamp(sys.argv[3])
 	end = pd.Timestamp(sys.argv[4])
-	rebalance_frequency = rebalance_frequency_map[sys.argv[5]]
+	rebalance_frequency_string = sys.argv[5]
+	rebalance_frequency = rebalance_frequency_map[rebalance_frequency_string]
 	feature_limit = int(sys.argv[6])
 	assert start < split < end
 	results: list[EvaluationResults]
@@ -127,7 +136,7 @@ def main() -> None:
 		result_category = key_evaluation_results[0].result_category
 		print_performance(key_evaluation_results, result_category)
 
-	print_general_info(symbol, start, split, end, feature_limit)
+	print_general_info(symbol, start, split, end, feature_limit, rebalance_frequency_string)
 
 if __name__ == "__main__":
 	main()

@@ -1,6 +1,7 @@
 import os
 from collections import defaultdict
-from typing import cast
+from functools import partial
+from typing import cast, Callable
 
 import numpy as np
 import pandas as pd
@@ -10,7 +11,7 @@ from sklearn.decomposition import PCA
 from sklearn.feature_selection import SelectKBest, mutual_info_regression, f_regression
 
 from config import Configuration
-from data import TrainingData
+from data import TrainingData, RegressionDataset
 from economic import get_barchart_features
 from enums import RebalanceFrequency
 from fred import get_fred_features
@@ -81,6 +82,9 @@ def evaluate(
 	deltas = []
 	features: defaultdict[str, list[float]] = defaultdict(list)
 
+	def filter_by_dayofweek(day: int, filter_time: pd.Timestamp) -> bool:
+		return filter_time.dayofweek == day
+
 	def skip_date(t: pd.Timestamp) -> bool:
 		return Configuration.SKIP_COVID and pd.Timestamp("2020-03-01") <= t < pd.Timestamp("2020-11-01")
 
@@ -92,84 +96,176 @@ def evaluate(
 	last = data.ohlc_series.get(validation_times[-1])
 	buy_and_hold_performance = last.close / first.close
 	add_features(start, time_range, rebalance_frequency, data, returns, deltas, features)
-	results: list[tuple[str, float, float]] = []
-	ranked_features = []
-	for feature_name, feature_values in features.items():
-		if all(x == feature_values[0] for x in feature_values):
-			continue
-		if Configuration.USE_PEARSON:
-			significance = pearsonr(returns, feature_values)
+
+	category_filters: list[tuple[int, str, Callable[[pd.Timestamp], bool]] | None] = [None]
+	if rebalance_frequency == RebalanceFrequency.DAILY_SPLIT:
+		days = [
+			"Monday",
+			"Tuesday",
+			"Wednesday",
+			"Thursday",
+			"Friday",
+		]
+		category_filters = [(i, days_value, partial(filter_by_dayofweek, i)) for i, days_value in enumerate(days)]
+
+	category_datasets: dict[int, RegressionDataset] = {}
+
+	for category_configuration in category_filters:
+		if category_configuration is None:
+			category_id = None
+			category_name = None
+			time_filter = None
+			filtered_indexes_training = None
+			filtered_indexes_validation = None
 		else:
-			significance = spearmanr(returns, feature_values) # type: ignore
-		results.append((feature_name, significance.statistic, significance.pvalue))
-		ranked_features.append((feature_values, significance.statistic))
-	results = sorted(results, key=lambda x: abs(x[1]), reverse=True)
-	results_df = pd.DataFrame(results, columns=["Feature", "Pearson" if Configuration.USE_PEARSON else "Spearman", "p-value"])
-	path = os.path.join(Configuration.CORRELATION_DIRECTORY, f"{symbol}.csv")
-	results_df.to_csv(path, index=False, float_format="%.5f")
-	ranked_features = sorted(ranked_features, key=lambda x: abs(x[1]), reverse=True)
-	if feature_limit is not None and not Configuration.SELECT_K_BEST:
-		limit = Configuration.PCA_RANK_FILTER if Configuration.USE_PCA else feature_limit
-		ranked_features = ranked_features[:limit]
-	significant_features = [features for features, _statistic in ranked_features]
-	if Configuration.WINSORIZE:
-		for i in range(len(significant_features)):
-			features_array = np.array(significant_features[i])
-			winsorized_array = winsorize(features_array, (Configuration.WINSORIZE_LIMIT, Configuration.WINSORIZE_LIMIT))
-			significant_features[i] = winsorized_array.tolist()
-	training_samples = len([time for time in time_range if time < split])
-	regression_features = [list(row) for row in zip(*significant_features)]
-	x_training = regression_features[:training_samples]
-	x_validation = regression_features[training_samples:]
-	y_training = returns[:training_samples]
-	y_validation = returns[training_samples:]
-	deltas_validation = deltas[training_samples:]
-	if Configuration.USE_PCA:
-		pca = PCA(n_components=feature_limit)
-		pca.fit(x_training)
-		x_training = pca.transform(x_training)
-		x_validation = pca.transform(x_validation)
-	elif Configuration.SELECT_K_BEST:
-		match Configuration.SELECT_K_BEST_SCORE:
-			case "mutual_info_regression":
-				score_func = mutual_info_regression
-			case "f_regression":
-				score_func = f_regression
-			case _:
-				raise Exception(f"Unknown SelectKBest score function: \"{Configuration.SELECT_K_BEST_SCORE}\"")
-		selector = SelectKBest(score_func=score_func, k=feature_limit)
-		selector.fit(x_training, y_training)
-		support = cast(list[bool], selector.get_support())
-		selected_features = []
-		feature_names = list(features.keys())
-		for i in range(len(selector.scores_)):
-			if support[i]:
-				score = selector.scores_[i]
-				feature_name = feature_names[i]
-				selected_features.append((feature_name, score))
-		selected_features = sorted(selected_features, key=lambda x: x[1], reverse=True)
-		selected_features_dict = {
-			"Feature": [feature_name for feature_name, _score in selected_features],
-			"Score": [score for _feature_name, score in selected_features]
-		}
-		selected_features_path = os.path.join(Configuration.SELECTION_DIRECTORY, f"{symbol}-{feature_limit}.csv")
-		selected_features_df = pd.DataFrame.from_dict(selected_features_dict)
-		selected_features_df.to_csv(selected_features_path, index=False)
-		print(f"Wrote {selected_features_path}")
-		x_training = selector.transform(x_training)
-		x_validation = selector.transform(x_validation)
+			def get_filtered_indexes(time_values: list[pd.Timestamp]) -> list[int]:
+				return [i for i in range(len(time_values)) if time_filter(time_values[i])]
+
+			category_id, category_name, time_filter = category_configuration
+			filtered_indexes_training = get_filtered_indexes(training_times)
+			filtered_indexes_validation = get_filtered_indexes(validation_times)
+		ranking_results: list[tuple[str, float, float]] = []
+		ranked_features: list[tuple[list[float], list[float], float]] = []
+		for feature_name, feature_values in features.items():
+			if all(x == feature_values[0] for x in feature_values):
+				continue
+			if category_configuration is None:
+				training_samples = len(training_times)
+				training_features = feature_values[:training_samples]
+				training_returns = returns[:training_samples]
+				validation_features = feature_values[training_samples:]
+			else:
+				training_features = [feature_values[i] for i in filtered_indexes_training]
+				training_returns = [returns[i] for i in filtered_indexes_training]
+				validation_features = [feature_values[i] for i in filtered_indexes_validation]
+			if Configuration.USE_PEARSON:
+				significance = pearsonr(training_features, training_returns)
+			else:
+				significance = spearmanr(training_features, training_returns) # type: ignore
+			ranking_results.append((feature_name, significance.statistic, significance.pvalue))
+			ranked_features.append((training_features, validation_features, significance.statistic))
+		ranking_results = sorted(ranking_results, key=lambda x: abs(x[1]), reverse=True)
+		ranking_results_df = pd.DataFrame(ranking_results, columns=["Feature", "Pearson" if Configuration.USE_PEARSON else "Spearman", "p-value"])
+		file_name = f"{symbol}.csv" if category_configuration is None else f"{symbol}-{category_name}.csv"
+		path = os.path.join(Configuration.CORRELATION_DIRECTORY, file_name)
+		ranking_results_df.to_csv(path, index=False, float_format="%.5f")
+		ranked_features = sorted(ranked_features, key=lambda x: abs(x[2]), reverse=True)
+		if feature_limit is not None and not Configuration.SELECT_K_BEST:
+			limit = Configuration.PCA_RANK_FILTER if Configuration.USE_PCA else feature_limit
+			ranked_features = ranked_features[:limit]
+		significant_training_features = [trainig_features for trainig_features, _validation_features, _statistic in ranked_features]
+		significant_validation_features = [validation_features for _trainig_features, validation_features, _statistic in ranked_features]
+		if Configuration.WINSORIZE:
+			for i, training_values in enumerate(significant_training_features):
+				features_array = np.array(training_values)
+				winsorized_array = winsorize(features_array, (Configuration.WINSORIZE_LIMIT, Configuration.WINSORIZE_LIMIT))
+				minimum = np.min(winsorized_array)
+				maximum = np.max(winsorized_array)
+				significant_training_features[i] = winsorized_array.tolist()
+				# Winsorize validation data separately using the min/max parameters from the training data
+				validation_values = significant_validation_features[i]
+				significant_validation_features[i] = [max(min(x, maximum), minimum) for x in validation_values]
+
+		def transpose_features(f: list[list[float]]):
+			return [list(row) for row in zip(*f)]
+
+		x_training = transpose_features(significant_training_features)
+		x_validation = transpose_features(significant_validation_features)
+		if category_configuration is None:
+			training_samples = len(training_times)
+			y_training = returns[:training_samples]
+			y_validation = returns[training_samples:]
+			deltas_validation = deltas[training_samples:]
+		else:
+			y_training = [returns[i] for i in filtered_indexes_training]
+			y_validation = [returns[i] for i in filtered_indexes_validation]
+			deltas_validation = [deltas[i] for i in filtered_indexes_validation]
+
+		if Configuration.USE_PCA:
+			x_training, x_validation = apply_pca(x_training, x_validation, feature_limit)
+		elif Configuration.SELECT_K_BEST:
+			x_training, x_validation = select_k_best(
+				symbol,
+				category_name,
+				x_training,
+				y_training,
+				x_validation,
+				features,
+				feature_limit
+			)
+
+		dataset = RegressionDataset(
+			x_training,
+			y_training,
+			x_validation,
+			y_validation,
+			training_times,
+			validation_times,
+			deltas_validation
+		)
+		category_datasets[category_id] = dataset
+
 	output = perform_regression(
 		symbol,
-		x_training,
-		y_training,
-		x_validation,
-		y_validation,
-		training_times,
-		validation_times,
-		deltas_validation,
+		category_datasets,
+		category_filters,
 		rebalance_frequency,
 		buy_and_hold_performance,
 		process_id,
 		process_count
 	)
 	return output
+
+def apply_pca(
+		x_training: list[list[float]],
+		x_validation: list[list[float]],
+		feature_limit: int
+) -> tuple[list[list[float]], list[list[float]]]:
+	pca = PCA(n_components=feature_limit)
+	pca.fit(x_training)
+	x_training = pca.transform(x_training)
+	x_validation = pca.transform(x_validation)
+	return x_training, x_validation
+
+def select_k_best(
+		symbol: str,
+		category_name: str | None,
+		x_training: list[list[float]],
+		y_training: list[list[float]],
+		x_validation: list[list[float]],
+		features: defaultdict[str, list[float]],
+		feature_limit: int
+) -> tuple[list[list[float]], list[list[float]]]:
+	match Configuration.SELECT_K_BEST_SCORE:
+		case "mutual_info_regression":
+			score_func = mutual_info_regression
+		case "f_regression":
+			score_func = f_regression
+		case _:
+			raise Exception(f"Unknown SelectKBest score function: \"{Configuration.SELECT_K_BEST_SCORE}\"")
+	selector = SelectKBest(score_func=score_func, k=feature_limit)
+	selector.fit(x_training, y_training)
+	support = cast(list[bool], selector.get_support())
+	selected_features = []
+	feature_names = list(features.keys())
+	for i in range(len(selector.scores_)):
+		if support[i]:
+			score = selector.scores_[i]
+			feature_name = feature_names[i]
+			selected_features.append((feature_name, score))
+	selected_features = sorted(selected_features, key=lambda x: x[1], reverse=True)
+	selected_features_dict = {
+		"Feature": [feature_name for feature_name, _score in selected_features],
+		"Score": [score for _feature_name, score in selected_features]
+	}
+	if category_name is None:
+		file_name = f"{symbol}-{Configuration.SELECT_K_BEST_SCORE}-{feature_limit}.csv"
+	else:
+		file_name = f"{symbol}-{category_name}-{Configuration.SELECT_K_BEST_SCORE}-{feature_limit}.csv"
+	selected_features_path = os.path.join(Configuration.SELECTION_DIRECTORY, file_name)
+	selected_features_df = pd.DataFrame.from_dict(selected_features_dict)
+	selected_features_df.to_csv(selected_features_path, index=False)
+	print(f"Wrote {selected_features_path}")
+	x_training = selector.transform(x_training)
+	x_validation = selector.transform(x_validation)
+	return x_training, x_validation

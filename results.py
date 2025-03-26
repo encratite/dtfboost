@@ -1,5 +1,6 @@
 from typing import Final
 
+from colorama import Fore, Style
 import pandas as pd
 
 from config import Configuration
@@ -117,32 +118,52 @@ class EvaluationResults:
 		print(f"{prefix} Model performance (long): {get_performance_trade_string(long_performance, self.long_trades)}")
 		print(f"{prefix} Model performance (short): {get_performance_trade_string(short_performance, self.short_trades)}")
 		print(f"{prefix} Model performance (all): {get_performance_trade_string(total_performance, self.all_trades)}")
-		print(f"{prefix} Signal/return quantiles: {self.get_quantiles_string(self.quantiles)}")
+		print(f"{prefix} Signal/return quantiles: {self.get_quantile_string(self.quantiles)}")
 
 	@staticmethod
-	def get_quantiles_string(quantiles: list[float]) -> str:
-		quantile_string = ", ".join([f"{x:+.2%}" for x in quantiles])
+	def get_quantile_string(quantiles: list[float]) -> str:
+		quantile_string = ", ".join([EvaluationResults.format_percentage(x) for x in quantiles])
+		quantile_delta = EvaluationResults.get_quantile_delta(quantiles)
+		return f"{quantile_string} ({EvaluationResults.format_percentage(quantile_delta)})"
+
+	@staticmethod
+	def get_quantile_cells(quantiles: list[float]) -> list[str]:
+		quantile_delta = EvaluationResults.get_quantile_delta(quantiles)
+		cells = [EvaluationResults.format_percentage(x) for x in quantiles + [quantile_delta]]
+		return cells
+
+	@staticmethod
+	def get_quantile_delta(quantiles: list[float]) -> float:
 		quantile_delta = abs(quantiles[-1] - quantiles[0])
-		return f"{quantile_string} ({quantile_delta:+.2%})"
+		return quantile_delta
 
 	def get_annualized_long_performance(self) -> float:
 		performance = self._get_cash_performance(self.long_cash)
 		annualized_performance = self._get_annualized_performance(performance)
 		return annualized_performance
 
-	def get_annualized_short_performance(self):
+	def get_annualized_short_performance(self) -> float:
 		performance = self._get_cash_performance(self.short_cash)
 		annualized_performance = self._get_annualized_performance(performance)
 		return annualized_performance
 
-	def get_annualized_performance(self):
+	def get_annualized_performance(self) -> float:
 		performance = self._get_cash_performance(self.all_cash)
 		annualized_performance = self._get_annualized_performance(performance)
 		return annualized_performance
 
 	@staticmethod
 	def get_performance_string(performance: float) -> str:
-		return f"{performance - 1:+.2%}"
+		return EvaluationResults.format_percentage(performance - 1)
+
+	@staticmethod
+	def format_percentage(percentage: float) -> str:
+		output = f"{percentage:+.2%}"
+		if percentage > 0:
+			output = f"{Fore.GREEN}{output}{Style.RESET_ALL}"
+		elif percentage < 0:
+			output = f"{Fore.RED}{output}{Style.RESET_ALL}"
+		return output
 
 	@staticmethod
 	def _get_cash_performance(cash: float) -> float:

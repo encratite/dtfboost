@@ -73,6 +73,7 @@ def evaluate(
 		split: pd.Timestamp,
 		end: pd.Timestamp,
 		rebalance_frequency: RebalanceFrequency,
+		rebalance_frequency_string: str,
 		feature_limit: int | None,
 		process_id: int,
 		process_count: int
@@ -127,8 +128,6 @@ def evaluate(
 		ranking_results: list[tuple[str, float, float]] = []
 		ranked_features: list[tuple[list[float], list[float], float]] = []
 		for feature_name, feature_values in features.items():
-			if all(x == feature_values[0] for x in feature_values):
-				continue
 			if category_configuration is None:
 				training_samples = len(training_times)
 				training_features = feature_values[:training_samples]
@@ -138,6 +137,8 @@ def evaluate(
 				training_features = [feature_values[i] for i in filtered_indexes_training]
 				training_returns = [returns[i] for i in filtered_indexes_training]
 				validation_features = [feature_values[i] for i in filtered_indexes_validation]
+			if all(x == training_features[0] for x in training_features):
+				continue
 			if Configuration.USE_PEARSON:
 				significance = pearsonr(training_features, training_returns)
 			else:
@@ -146,7 +147,7 @@ def evaluate(
 			ranked_features.append((training_features, validation_features, significance.statistic))
 		ranking_results = sorted(ranking_results, key=lambda x: abs(x[1]), reverse=True)
 		ranking_results_df = pd.DataFrame(ranking_results, columns=["Feature", "Pearson" if Configuration.USE_PEARSON else "Spearman", "p-value"])
-		file_name = f"{symbol}.csv" if category_configuration is None else f"{symbol}-{category_name}.csv"
+		file_name = f"{symbol}-{rebalance_frequency_string}.csv" if category_configuration is None else f"{symbol}-{rebalance_frequency_string}-{category_name}.csv"
 		path = os.path.join(Configuration.CORRELATION_DIRECTORY, file_name)
 		ranking_results_df.to_csv(path, index=False, float_format="%.5f")
 		ranked_features = sorted(ranked_features, key=lambda x: abs(x[2]), reverse=True)
@@ -191,7 +192,8 @@ def evaluate(
 				y_training,
 				x_validation,
 				features,
-				feature_limit
+				feature_limit,
+				rebalance_frequency_string
 			)
 
 		dataset = RegressionDataset(
@@ -234,7 +236,8 @@ def select_k_best(
 		y_training: list[list[float]],
 		x_validation: list[list[float]],
 		features: defaultdict[str, list[float]],
-		feature_limit: int
+		feature_limit: int,
+		rebalance_frequency_string: str
 ) -> tuple[list[list[float]], list[list[float]]]:
 	match Configuration.SELECT_K_BEST_SCORE:
 		case "mutual_info_regression":
@@ -259,9 +262,9 @@ def select_k_best(
 		"Score": [score for _feature_name, score in selected_features]
 	}
 	if category_name is None:
-		file_name = f"{symbol}-{Configuration.SELECT_K_BEST_SCORE}-{feature_limit}.csv"
+		file_name = f"{symbol}-{rebalance_frequency_string}-{Configuration.SELECT_K_BEST_SCORE}-{feature_limit}.csv"
 	else:
-		file_name = f"{symbol}-{category_name}-{Configuration.SELECT_K_BEST_SCORE}-{feature_limit}.csv"
+		file_name = f"{symbol}-{rebalance_frequency_string}-{category_name}-{Configuration.SELECT_K_BEST_SCORE}-{feature_limit}.csv"
 	selected_features_path = os.path.join(Configuration.SELECTION_DIRECTORY, file_name)
 	selected_features_df = pd.DataFrame.from_dict(selected_features_dict)
 	selected_features_df.to_csv(selected_features_path, index=False)

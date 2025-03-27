@@ -150,7 +150,7 @@ def evaluate(
 			eda_features = {}
 			for feature_name, training_features, validation_features, _statistic in ranked_features:
 				eda_features[feature_name] = training_features + validation_features
-			explore_data(eda_features, returns)
+			explore_data(symbol, eda_features, returns)
 			return None
 
 		ranking_results = sorted(ranking_results, key=lambda x: abs(x[1]), reverse=True)

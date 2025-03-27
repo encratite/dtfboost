@@ -13,6 +13,7 @@ from sklearn.feature_selection import SelectKBest, mutual_info_regression, f_reg
 from config import Configuration
 from data import TrainingData, RegressionDataset
 from economic import get_barchart_features
+from explore import explore_data
 from enums import RebalanceFrequency
 from fred import get_fred_features
 from regression import perform_regression
@@ -77,7 +78,7 @@ def evaluate(
 		feature_limit: int | None,
 		process_id: int,
 		process_count: int
-) -> list[EvaluationResults]:
+) -> list[EvaluationResults] | None:
 	assert not (Configuration.USE_PCA and Configuration.SELECT_K_BEST)
 	returns = []
 	deltas = []
@@ -125,8 +126,8 @@ def evaluate(
 			category_id, category_name, time_filter = category_configuration
 			filtered_indexes_training = get_filtered_indexes(training_times)
 			filtered_indexes_validation = get_filtered_indexes(validation_times)
-		ranking_results: list[tuple[str, float, float]] = []
-		ranked_features: list[tuple[list[float], list[float], float]] = []
+		ranking_results: list[tuple[str, float, float, float, float]] = []
+		ranked_features: list[tuple[str, list[float], list[float], float]] = []
 		for feature_name, feature_values in features.items():
 			if category_configuration is None:
 				training_samples = len(training_times)
@@ -139,14 +140,21 @@ def evaluate(
 				validation_features = [feature_values[i] for i in filtered_indexes_validation]
 			if all(x == training_features[0] for x in training_features):
 				continue
-			if Configuration.USE_PEARSON:
-				significance = pearsonr(training_features, training_returns)
-			else:
-				significance = spearmanr(training_features, training_returns) # type: ignore
-			ranking_results.append((feature_name, significance.statistic, significance.pvalue))
-			ranked_features.append((training_features, validation_features, significance.statistic))
+			pearson = pearsonr(training_features, training_returns)
+			spearman = spearmanr(training_features, training_returns) # type: ignore
+			ranking_results.append((feature_name, pearson.statistic, pearson.pvalue, spearman.statistic, spearman.pvalue))
+			rank_statistic = pearson.statistic if Configuration.USE_PEARSON else spearman.statistic
+			ranked_features.append((feature_name, training_features, validation_features, rank_statistic))
+
+		if Configuration.EDA_MODE:
+			eda_features = {}
+			for feature_name, training_features, validation_features, _statistic in ranked_features:
+				eda_features[feature_name] = training_features + validation_features
+			explore_data(eda_features, returns)
+			return None
+
 		ranking_results = sorted(ranking_results, key=lambda x: abs(x[1]), reverse=True)
-		ranking_results_df = pd.DataFrame(ranking_results, columns=["Feature", "Pearson" if Configuration.USE_PEARSON else "Spearman", "p-value"])
+		ranking_results_df = pd.DataFrame(ranking_results, columns=["feature", "pearson_coefficient", "pearson_p_value", "spearman_coefficient", "spearman_p_value"])
 		file_name = f"{symbol}-{rebalance_frequency_string}.csv" if category_configuration is None else f"{symbol}-{rebalance_frequency_string}-{category_name}.csv"
 		path = os.path.join(Configuration.CORRELATION_DIRECTORY, file_name)
 		ranking_results_df.to_csv(path, index=False, float_format="%.5f")
@@ -154,8 +162,8 @@ def evaluate(
 		if feature_limit is not None and not Configuration.SELECT_K_BEST:
 			limit = Configuration.PCA_RANK_FILTER if Configuration.USE_PCA else feature_limit
 			ranked_features = ranked_features[:limit]
-		significant_training_features = [trainig_features for trainig_features, _validation_features, _statistic in ranked_features]
-		significant_validation_features = [validation_features for _trainig_features, validation_features, _statistic in ranked_features]
+		significant_training_features = [training_features for _feature_name, training_features, _validation_features, _statistic in ranked_features]
+		significant_validation_features = [validation_features for _feature_name, _trainig_features, validation_features, _statistic in ranked_features]
 		if Configuration.WINSORIZE:
 			for i, training_values in enumerate(significant_training_features):
 				features_array = np.array(training_values)

@@ -214,7 +214,7 @@ def main() -> None:
 	feature_limit = int(sys.argv[6])
 	assert start < split < end
 	results: list[EvaluationResults]
-	if Configuration.ENABLE_MULTIPROCESSING:
+	if Configuration.ENABLE_MULTIPROCESSING and not Configuration.EDA_MODE:
 		process_count = cpu_count()
 		arguments = [(
 			symbol,
@@ -242,6 +242,8 @@ def main() -> None:
 			0,
 			1
 		)
+	if results is None:
+		return
 
 	colorama_init()
 	print_newline()

@@ -12,7 +12,7 @@ from sklearn.preprocessing import StandardScaler, RobustScaler, QuantileTransfor
 from tqdm import tqdm
 
 from config import Configuration
-from data import RegressionDataset
+from data import RegressionDataset, TrainingData
 from enums import RebalanceFrequency
 from models import get_models
 from results import EvaluationResults
@@ -25,7 +25,8 @@ def perform_regression(
 		rebalance_frequency: RebalanceFrequency,
 		buy_and_hold_performance: float,
 		process_id: int,
-		process_count: int
+		process_count: int,
+		training_data: TrainingData
 	) -> list[EvaluationResults]:
 	tick_size, tick_value, contracts, slippage = get_asset_configuration(symbol)
 	models = get_models()
@@ -103,7 +104,8 @@ def perform_regression(
 			tick_size,
 			tick_value,
 			contracts,
-			evaluation_results
+			evaluation_results,
+			training_data
 		)
 		output.append(evaluation_results)
 
@@ -148,11 +150,14 @@ def estimate_returns(
 	tick_size: float,
 	tick_value: float,
 	contracts: int,
-	evaluation_results: EvaluationResults
+	evaluation_results: EvaluationResults,
+	training_data: TrainingData
 ) -> None:
 	y_validation = dataset.y_validation
 	validation_times = dataset.validation_times
 	deltas = dataset.delta_validation
+
+	treasury_bill = training_data.fred_data["TB3MS"]
 
 	last_trade_time: pd.Timestamp | None = None
 	signal_returns: list[tuple[float, float]] = []
@@ -166,17 +171,19 @@ def estimate_returns(
 			elif rebalance_frequency == RebalanceFrequency.MONTHLY:
 				if time.month == last_trade_time.month:
 					continue
+		risk_free_rate = treasury_bill.get(time) / 100
 		delta = deltas[i]
-		returns = contracts * delta / tick_size * tick_value
+		absolute_return = contracts * delta / tick_size * tick_value
 		signal = validation_predictions[i]
 		long_threshold = np.percentile(signal_history, Configuration.SIGNAL_LONG_PERCENTILE)
 		short_threshold = np.percentile(signal_history, Configuration.SIGNAL_SHORT_PERCENTILE)
+		relative_return = y_validation[i]
 		if signal > long_threshold and (not Configuration.SIGNAL_SIGN_CHECK or signal > 0):
 			# Long trade
-			evaluation_results.submit_trade(returns, True)
+			evaluation_results.submit_trade(True, absolute_return, relative_return, risk_free_rate)
 		elif signal < short_threshold and (not Configuration.SIGNAL_SIGN_CHECK or signal < 0):
 			# Short trade
-			evaluation_results.submit_trade(returns, False)
+			evaluation_results.submit_trade(False, absolute_return, relative_return, risk_free_rate)
 		else:
 			# No trade
 			pass
@@ -184,8 +191,7 @@ def estimate_returns(
 		signal_history.append(signal)
 		assert len(signal_history) == Configuration.SIGNAL_HISTORY
 		last_trade_time = time
-		actual_returns = y_validation[i]
-		signal_returns.append((signal, actual_returns))
+		signal_returns.append((signal, relative_return))
 	signal_returns = sorted(signal_returns, key=lambda x: x[0])
 	sorted_returns = [returns for _signal, returns in signal_returns]
 	quintiles = 5

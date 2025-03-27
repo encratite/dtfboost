@@ -214,7 +214,8 @@ def evaluate(
 		rebalance_frequency,
 		buy_and_hold_performance,
 		process_id,
-		process_count
+		process_count,
+		data
 	)
 	return output
 

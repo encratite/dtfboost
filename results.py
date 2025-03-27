@@ -1,14 +1,19 @@
 from typing import Final
+from statistics import stdev, mean
+from math import sqrt
 
 from colorama import Fore, Style
 import pandas as pd
 
 from config import Configuration
+from data import TrainingData
 from enums import RebalanceFrequency
 from models import ModelType
+from technical import DAYS_SINCE_X
 
 class EvaluationResults:
 	DAYS_PER_YEAR: Final[float] = 365.25
+	TRADING_DAYS_PER_YEAR: Final[float] = 252
 
 	symbol: str
 	buy_and_hold_performance: float
@@ -19,9 +24,9 @@ class EvaluationResults:
 	long_cash: float
 	short_cash: float
 	all_cash: float
-	all_trades: int
-	long_trades: int
-	short_trades: int
+	long_trades: list[tuple[float, float]]
+	short_trades: list[tuple[float, float]]
+	all_trades: list[tuple[float, float]]
 	slippage: float
 	start: pd.Timestamp
 	end: pd.Timestamp
@@ -34,23 +39,22 @@ class EvaluationResults:
 	result_category: str | None
 
 	def __init__(
-			self,
-			symbol: str,
-			buy_and_hold_performance: float,
-			r2_score_training: float,
-			r2_score_validation: float,
-			mean_absolute_error_training: float,
-			mean_absolute_error_validation: float,
-			slippage: float,
-			start: pd.Timestamp,
-			end: pd.Timestamp,
-			rebalance_frequency:
-			RebalanceFrequency,
-			model_name: str,
-			model_type: ModelType,
-			parameters: dict[str, int | str],
-			result_category_id: int | None,
-			result_category: str | None
+		self,
+		symbol: str,
+		buy_and_hold_performance: float,
+		r2_score_training: float,
+		r2_score_validation: float,
+		mean_absolute_error_training: float,
+		mean_absolute_error_validation: float,
+		slippage: float,
+		start: pd.Timestamp,
+		end: pd.Timestamp,
+		rebalance_frequency: RebalanceFrequency,
+		model_name: str,
+		model_type: ModelType,
+		parameters: dict[str, int | str],
+		result_category_id: int | None,
+		result_category: str | None
 	):
 		assert slippage >= 0
 		assert start < end
@@ -63,9 +67,9 @@ class EvaluationResults:
 		self.all_cash = Configuration.INITIAL_CASH
 		self.long_cash = Configuration.INITIAL_CASH
 		self.short_cash = Configuration.INITIAL_CASH
-		self.all_trades = 0
-		self.long_trades = 0
-		self.short_trades = 0
+		self.all_trades = []
+		self.long_trades = []
+		self.short_trades = []
 		self.slippage = slippage
 		self.start = start
 		self.end = end
@@ -77,19 +81,19 @@ class EvaluationResults:
 		self.result_category_id = result_category_id
 		self.result_category = result_category
 
-	def submit_trade(self, returns: float, long: bool) -> None:
+	def submit_trade(self, long: bool, absolute_return: float, relative_return: float, risk_free_rate: float) -> None:
 		if long:
-			self.long_cash += returns
+			self.long_cash += absolute_return
 			self.long_cash -= self.slippage
-			self.all_cash += returns
-			self.long_trades += 1
+			self.all_cash += absolute_return
+			self.long_trades.append((relative_return, risk_free_rate))
 		else:
-			self.short_cash -= returns
+			self.short_cash -= absolute_return
 			self.short_cash -= self.slippage
-			self.all_cash -= returns
-			self.short_trades += 1
-		self.all_trades += 1
+			self.all_cash -= absolute_return
+			self.short_trades.append((relative_return, risk_free_rate))
 		self.all_cash -= self.slippage
+		self.all_trades.append((relative_return, risk_free_rate))
 
 	def get_model_name(self) -> str:
 		strings = [str(x) for x in self.parameters.values()]
@@ -115,9 +119,9 @@ class EvaluationResults:
 		print(f"{prefix} R2 scores: training {self.r2_score_training:.3f}, validation {self.r2_score_validation:.3f}")
 		print(f"{prefix} Mean absolute error: {self.mean_absolute_error_training:.4f} training, {self.mean_absolute_error_validation:.4f} validation")
 		print(f"{prefix} Buy and hold performance: {self.get_performance_string(buy_and_hold_performance)}")
-		print(f"{prefix} Model performance (long): {get_performance_trade_string(long_performance, self.long_trades)}")
-		print(f"{prefix} Model performance (short): {get_performance_trade_string(short_performance, self.short_trades)}")
-		print(f"{prefix} Model performance (all): {get_performance_trade_string(total_performance, self.all_trades)}")
+		print(f"{prefix} Model performance (long): {get_performance_trade_string(long_performance, len(self.long_trades))}")
+		print(f"{prefix} Model performance (short): {get_performance_trade_string(short_performance, len(self.short_trades))}")
+		print(f"{prefix} Model performance (all): {get_performance_trade_string(total_performance, len(self.all_trades))}")
 		print(f"{prefix} Signal/return quantiles: {self.get_quantile_string(self.quantiles)}")
 
 	@staticmethod
@@ -152,6 +156,15 @@ class EvaluationResults:
 		annualized_performance = self._get_annualized_performance(performance)
 		return annualized_performance
 
+	def get_long_sharpe_ratio(self) -> float:
+		return self._get_sharpe_ratio(self.long_trades)
+
+	def get_short_sharpe_ratio(self) -> float:
+		return self._get_sharpe_ratio(self.short_trades)
+
+	def get_total_sharpe_ratio(self) -> float:
+		return self._get_sharpe_ratio(self.all_trades)
+
 	@staticmethod
 	def get_performance_string(performance: float) -> str:
 		return EvaluationResults.format_percentage(performance - 1)
@@ -176,3 +189,21 @@ class EvaluationResults:
 		days = (self.end - self.start).days
 		annualized_performance = performance**(self.DAYS_PER_YEAR / days)
 		return annualized_performance
+
+	def _get_sharpe_ratio(self, returns_data: list[tuple[float, float]]) -> float | None:
+		if len(returns_data) < 10:
+			return None
+		match self.rebalance_frequency:
+			case RebalanceFrequency.DAILY | RebalanceFrequency.DAILY_SPLIT:
+				factor = self.TRADING_DAYS_PER_YEAR
+			case RebalanceFrequency.WEEKLY:
+				factor = self.DAYS_PER_YEAR / 7
+			case RebalanceFrequency.MONTHLY:
+				factor = 12
+			case _:
+				raise Exception("Unknown rebalance frequency")
+		returns = [returns for returns, _risk_free_rate in returns_data]
+		risk_free_returns = [risk_free_rate for _returns, risk_free_rate in returns_data]
+		ratio = (factor * mean(returns) - mean(risk_free_returns)) / stdev(returns)
+		annualized_sharpe_ratio = ratio / sqrt(EvaluationResults.TRADING_DAYS_PER_YEAR)
+		return annualized_sharpe_ratio

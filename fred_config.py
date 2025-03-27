@@ -12,6 +12,8 @@ FRED_CONFIG: list[tuple[str, str, PostProcessing, FeatureCategory, FeatureFreque
 	("Federal Funds Effective Rate", "FEDFUNDS", PostProcessing.NOMINAL_AND_DIFFERENCE, FeatureCategory.ECONOMIC_INTEREST_RATES, FeatureFrequency.MONTHLY, "3:17 PM CST"),
 	# Federal Funds Effective Rate (DFF), percentage, daily
 	("Federal Funds Effective Rate (Daily)", "DFF", PostProcessing.NOMINAL_AND_DIFFERENCE, FeatureCategory.ECONOMIC_INTEREST_RATES, FeatureFrequency.DAILY, "3:16 PM CDT"),
+	# 3-Month Treasury Bill Secondary Market Rate, Discount Basis (TB3MS), percentage, daily
+	("3-Month Treasury Bill Secondary Market Rate", "TB3MS", PostProcessing.NOMINAL_AND_DIFFERENCE, FeatureCategory.ECONOMIC_INTEREST_RATES, FeatureFrequency.DAILY, "3:16 PM CST"),
 	# M2 money supply (M2SL), nominal, monthly
 	("M2 Supply", "M2SL", PostProcessing.RATE_OF_CHANGE, FeatureCategory.ECONOMIC_INTEREST_RATES, FeatureFrequency.MONTHLY, "12:01 PM CST"),
 	# 30-Year Fixed Rate Mortgage Average in the United States (MORTGAGE30US), percentage, weekly

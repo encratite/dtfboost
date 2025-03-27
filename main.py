@@ -81,6 +81,9 @@ def print_performance(results: list[EvaluationResults], result_category: str | N
 		"Long",
 		"Short",
 		"All",
+		"SR Long",
+		"SR Short",
+		"SR All",
 		"R2 Train",
 		"R2 Val",
 		"MAE Train",
@@ -104,6 +107,22 @@ def print_performance(results: list[EvaluationResults], result_category: str | N
 		all_models_performance_long.append(mean_performance_long)
 		all_models_performance_short.append(mean_performance_short)
 		all_models_performance_all.append(mean_performance_all)
+
+		def get_mean_sharpe_ratio(select: Callable[[EvaluationResults], float]) -> float | None:
+			sharpe_ratios = []
+			for x in evaluation_results:
+				sharpe_ratio = select(x)
+				if sharpe_ratio is not None:
+					sharpe_ratios.append(sharpe_ratio)
+			if len(sharpe_ratios) > 0:
+				return mean(sharpe_ratios)
+			else:
+				return None
+
+		mean_sharpe_ratio_long = get_mean_sharpe_ratio(lambda x: x.get_long_sharpe_ratio())
+		mean_sharpe_ratio_short = get_mean_sharpe_ratio(lambda x: x.get_short_sharpe_ratio())
+		mean_sharpe_ratio_all = get_mean_sharpe_ratio(lambda x: x.get_total_sharpe_ratio())
+
 		quantiles = []
 		for i in range(len(evaluation_results[0].quantiles)):
 			mean_values = [x.quantiles[i] for x in evaluation_results]
@@ -115,42 +134,29 @@ def print_performance(results: list[EvaluationResults], result_category: str | N
 		mean_absolute_error_training, mean_absolute_error_validation = get_mean_absolute_error(evaluation_results)
 		quantile_cells = EvaluationResults.get_quantile_cells(quantiles)
 
-		def is_good_r2_score(r2_score: float) -> bool:
-			return r2_score > 0.01
-
-		def is_bad_r2_score(r2_score: float) -> bool:
-			return r2_score < 0
-
-		def is_bad_mean_absoute_error(mean_absolute_error: float) -> bool:
-			return mean_absolute_error > 0.25
-
 		def format_mean_absolute_error(mean_absolute_error: float) -> str:
-			return format_numeric_value(mean_absolute_error, ".4f", negative_threshold=is_bad_mean_absoute_error)
+			return format_numeric_value(mean_absolute_error, ".4f", negative_threshold=lambda x: x > 0.25)
+
+		def format_sharpe_ratio(sharpe_ratio: float | None) -> str:
+			if sharpe_ratio is not None:
+				return format_numeric_value(sharpe_ratio, ".2f", lambda x: x > 0.8, lambda x: x < 0)
+			else:
+				return "-"
 
 		table.append([
 			evaluation_results[0].model_name,
 			mean_performance_long_string,
 			mean_performance_short_string,
 			mean_performance_all_string,
+			format_sharpe_ratio(mean_sharpe_ratio_long),
+			format_sharpe_ratio(mean_sharpe_ratio_short),
+			format_sharpe_ratio(mean_sharpe_ratio_all),
 			f"{mean_r2_score_training:.3f}",
-			format_numeric_value(mean_r2_score_validation, ".3f", is_good_r2_score, is_bad_r2_score),
+			format_numeric_value(mean_r2_score_validation, ".3f", lambda x: x > 0.01, lambda x: x < 0),
 			format_mean_absolute_error(mean_absolute_error_training),
 			format_mean_absolute_error(mean_absolute_error_validation)
 		] + quantile_cells)
-	column_alignment = (
-		"left",
-		"right",
-		"right",
-		"right",
-		"right",
-		"right",
-		"right",
-		"right",
-		"right",
-		"right",
-		"right",
-		"right"
-	)
+	column_alignment = ("left",) + 16 * ("right",)
 	print(tabulate(table, headers="firstrow", tablefmt="simple_outline", disable_numparse=True, colalign=column_alignment))
 
 	def get_mean_string(values: list[float]) -> str:

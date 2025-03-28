@@ -158,7 +158,7 @@ def evaluate(
 		file_name = f"{symbol}-{rebalance_frequency_string}.csv" if category_configuration is None else f"{symbol}-{rebalance_frequency_string}-{category_name}.csv"
 		path = os.path.join(Configuration.CORRELATION_DIRECTORY, file_name)
 		ranking_results_df.to_csv(path, index=False, float_format="%.5f")
-		ranked_features = sorted(ranked_features, key=lambda x: abs(x[2]), reverse=True)
+		ranked_features = sorted(ranked_features, key=lambda x: abs(x[3]), reverse=True)
 		if feature_limit is not None and not Configuration.SELECT_K_BEST:
 			limit = Configuration.PCA_RANK_FILTER if Configuration.USE_PCA else feature_limit
 			ranked_features = ranked_features[:limit]

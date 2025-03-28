@@ -87,13 +87,15 @@ class EvaluationResults:
 			self.long_cash -= self.slippage
 			self.all_cash += absolute_return
 			self.long_trades.append((relative_return, risk_free_rate))
+			self.all_trades.append((relative_return, risk_free_rate))
 		else:
 			self.short_cash -= absolute_return
 			self.short_cash -= self.slippage
 			self.all_cash -= absolute_return
-			self.short_trades.append((relative_return, risk_free_rate))
+			relative_short_return = 1 / (relative_return + 1) - 1
+			self.short_trades.append((relative_short_return, risk_free_rate))
+			self.all_trades.append((relative_short_return, risk_free_rate))
 		self.all_cash -= self.slippage
-		self.all_trades.append((relative_return, risk_free_rate))
 
 	def get_model_name(self) -> str:
 		strings = [str(x) for x in self.parameters.values()]

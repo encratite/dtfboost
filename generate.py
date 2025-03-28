@@ -66,7 +66,9 @@ def generate_continuous_contract(symbol: str) -> None:
 		global_offset += offset
 	# Generate DataFrame using the Panama canal method
 	df_dict = defaultdict(list)
-	precision = 2
+	# This is extremely questionable and previously caused horrible bugs
+	# Who the hell would use floats to represent monetary values anyway?
+	precision = 6
 	for ohlc, offset in ohlc_offsets:
 		df_dict["time"].append(ohlc.time.date())
 		df_dict["symbol"].append(repr(ohlc.globex_code))

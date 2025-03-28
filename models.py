@@ -21,6 +21,7 @@ class ModelType(Enum):
 	CATBOOST: Final[int] = 6
 	LIGHTGBM: Final[int] = 7
 	XGBOOST: Final[int] = 8
+	MLP_REGRESSOR: Final[int] = 9
 
 def get_models() -> list[tuple[str, ModelType, Any, dict]]:
 	models = get_linear_models()
@@ -342,5 +343,5 @@ def get_mlp_models() -> list[tuple[str, int, Any, dict]]:
 			learning_rate="adaptive",
 			random_state=Configuration.SEED
 		)
-		models.append(("MLPRegressor", model, parameters))
+		models.append(("MLPRegressor", ModelType.MLP_REGRESSOR, model, parameters))
 	return models

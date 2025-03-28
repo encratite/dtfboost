@@ -81,13 +81,22 @@ class EvaluationResults:
 		self.result_category_id = result_category_id
 		self.result_category = result_category
 
-	def submit_trade(self, long: bool, absolute_return: float, relative_return: float, risk_free_rate: float) -> None:
+	def submit_trade(
+		self,
+		long: bool,
+		absolute_return: float,
+		relative_return: float,
+		risk_free_rate: float,
+		time: pd.Timestamp
+	) -> None:
 		if long:
 			self.long_cash += absolute_return
 			self.long_cash -= self.slippage
 			self.all_cash += absolute_return
 			self.long_trades.append((relative_return, risk_free_rate))
 			self.all_trades.append((relative_return, risk_free_rate))
+			if Configuration.SHOW_TRADES:
+				print(f"{time.date()} Long trade: {self.format_percentage(relative_return)}")
 		else:
 			self.short_cash -= absolute_return
 			self.short_cash -= self.slippage
@@ -95,6 +104,8 @@ class EvaluationResults:
 			relative_short_return = 1 / (relative_return + 1) - 1
 			self.short_trades.append((relative_short_return, risk_free_rate))
 			self.all_trades.append((relative_short_return, risk_free_rate))
+			if Configuration.SHOW_TRADES:
+				print(f"{time.date()} Short trade: {self.format_percentage(relative_return)}")
 		self.all_cash -= self.slippage
 
 	def get_model_name(self) -> str:

@@ -29,6 +29,12 @@ def perform_regression(
 		training_data: TrainingData
 	) -> list[EvaluationResults]:
 	tick_size, tick_value, contracts, slippage = get_asset_configuration(symbol)
+	if Configuration.SHOW_TRADES:
+		print("Asset configuration:")
+		print(f"\tTick size: {tick_size:.2f}")
+		print(f"\tTick value: {tick_value:.2f}")
+		print(f"\tContracts: {contracts}")
+		print(f"\tSlippage: {slippage:.2f}\n")
 	models = get_models()
 	transform_data(category_datasets)
 
@@ -48,7 +54,7 @@ def perform_regression(
 		tasks.append((model_name, model_type, model, parameters))
 	tasks = [a + (b,) for a, b in product(tasks, category_filters)]
 
-	if process_id == 0:
+	if process_id == 0 and not Configuration.SHOW_TRADES:
 		wrapped_tasks = tqdm(tasks, desc="Evaluating models", colour="green")
 	else:
 		wrapped_tasks = tasks
@@ -180,10 +186,10 @@ def estimate_returns(
 		relative_return = y_validation[i]
 		if signal > long_threshold and (not Configuration.SIGNAL_SIGN_CHECK or signal > 0):
 			# Long trade
-			evaluation_results.submit_trade(True, absolute_return, relative_return, risk_free_rate)
+			evaluation_results.submit_trade(True, absolute_return, relative_return, risk_free_rate, time)
 		elif signal < short_threshold and (not Configuration.SIGNAL_SIGN_CHECK or signal < 0):
 			# Short trade
-			evaluation_results.submit_trade(False, absolute_return, relative_return, risk_free_rate)
+			evaluation_results.submit_trade(False, absolute_return, relative_return, risk_free_rate, time)
 		else:
 			# No trade
 			pass

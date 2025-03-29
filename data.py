@@ -43,6 +43,9 @@ class TrainingData:
 			self.fred_data[seid] = TimeSeries.read_csv(path, is_daily)
 
 class RegressionDataset:
+	start: pd.Timestamp
+	split: pd.Timestamp
+	end: pd.Timestamp
 	x_training: list[list[float]]
 	y_training: list[float]
 	x_validation: list[list[float]]
@@ -53,6 +56,9 @@ class RegressionDataset:
 
 	def __init__(
 		self,
+		start: pd.Timestamp,
+		split: pd.Timestamp,
+		end: pd.Timestamp,
 		x_training: list[list[float]],
 		y_training: list[float],
 		x_validation: list[list[float]],
@@ -61,6 +67,9 @@ class RegressionDataset:
 		validation_times: list[pd.Timestamp],
 		deltas_validation: list[float]
 	):
+		self.start = start
+		self.split = split
+		self.end = end
 		self.x_training = x_training
 		self.y_training = y_training
 		self.x_validation = x_validation

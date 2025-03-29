@@ -21,17 +21,21 @@ from results import EvaluationResults
 from seasonality import add_seasonality_features
 from technical import add_technical_features, get_rate_of_change, MOMENTUM_DAYS
 
-def get_forecast_days(rebalance_frequency: RebalanceFrequency):
+def get_future_time(time: pd.Timestamp, rebalance_frequency: RebalanceFrequency) -> pd.Timestamp:
+	future_time = time
+	one_day = pd.Timedelta(days=1)
 	match rebalance_frequency:
 		case RebalanceFrequency.DAILY | RebalanceFrequency.DAILY_SPLIT:
-			forecast_days = 1
+			future_time += one_day
 		case RebalanceFrequency.WEEKLY:
-			forecast_days = 7
+			while future_time.week == time.week:
+				future_time += one_day
 		case RebalanceFrequency.MONTHLY:
-			forecast_days = 30
+			while future_time.month == time.month:
+				future_time += one_day
 		case _:
 			raise Exception("Unknown rebalance frequency value")
-	return forecast_days
+	return future_time
 
 def add_features(
 		start: pd.Timestamp,
@@ -43,9 +47,8 @@ def add_features(
 		features: defaultdict[str, list[float]]
 ):
 	series_count = max(MOMENTUM_DAYS)
-	forecast_days = get_forecast_days(rebalance_frequency)
 	for time in time_range:
-		future_time = time + pd.Timedelta(days=forecast_days)
+		future_time = get_future_time(time, rebalance_frequency)
 		future = data.ohlc_series.get(future_time, right=True)
 		records = data.ohlc_series.get(time, count=series_count)
 		today = records[0]
@@ -205,6 +208,9 @@ def evaluate(
 			)
 
 		dataset = RegressionDataset(
+			start,
+			split,
+			end,
 			x_training,
 			y_training,
 			x_validation,
@@ -277,7 +283,6 @@ def select_k_best(
 	selected_features_path = os.path.join(Configuration.SELECTION_DIRECTORY, file_name)
 	selected_features_df = pd.DataFrame.from_dict(selected_features_dict)
 	selected_features_df.to_csv(selected_features_path, index=False)
-	print(f"Wrote {selected_features_path}")
 	x_training = selector.transform(x_training)
 	x_validation = selector.transform(x_validation)
 	return x_training, x_validation

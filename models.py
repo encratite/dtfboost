@@ -146,9 +146,11 @@ def get_catboost_models() -> list[tuple[str, ModelType, Any, dict]]:
 
 def get_lightgbm_models() -> list[tuple[str, ModelType, Any, dict]]:
 	num_leaves_values = [
+		4,
 		5,
+		6,
 		10,
-		15,
+		# 15,
 		# 20,
 		# 30,
 		# 40,
@@ -159,12 +161,13 @@ def get_lightgbm_models() -> list[tuple[str, ModelType, Any, dict]]:
 		10,
 		15,
 		20,
-		30
+		30,
+		40,
 	]
 	max_depth_values = [
 		# -1,
 		2,
-		3,
+		# 3,
 		# 4,
 		# 5,
 		# 6,
@@ -176,7 +179,7 @@ def get_lightgbm_models() -> list[tuple[str, ModelType, Any, dict]]:
 		30,
 		40,
 		50,
-		60,
+		# 60,
 	]
 	learning_rate_values = [
 		0.03,

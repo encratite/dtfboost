@@ -168,8 +168,11 @@ def estimate_returns(
 	last_trade_time: pd.Timestamp | None = None
 	signal_returns: list[tuple[float, float]] = []
 	signal_history = training_predictions.tolist()[-Configuration.SIGNAL_HISTORY:]
-	for i in range(len(y_validation)):
+	risk_free_rate_samples = []
+	for i, relative_return in enumerate(y_validation):
 		time = validation_times[i]
+		risk_free_rate = treasury_bill.get(time) / 100
+		risk_free_rate_samples.append(risk_free_rate)
 		if last_trade_time is not None:
 			if rebalance_frequency == RebalanceFrequency.WEEKLY:
 				if time.week == last_trade_time.week:
@@ -177,13 +180,11 @@ def estimate_returns(
 			elif rebalance_frequency == RebalanceFrequency.MONTHLY:
 				if time.month == last_trade_time.month:
 					continue
-		risk_free_rate = treasury_bill.get(time) / 100
 		delta = deltas[i]
 		absolute_return = contracts * delta / tick_size * tick_value
 		signal = validation_predictions[i]
 		long_threshold = np.percentile(signal_history, Configuration.SIGNAL_LONG_PERCENTILE)
 		short_threshold = np.percentile(signal_history, Configuration.SIGNAL_SHORT_PERCENTILE)
-		relative_return = y_validation[i]
 		if signal > long_threshold and (not Configuration.SIGNAL_SIGN_CHECK or signal > 0):
 			# Long trade
 			evaluation_results.submit_trade(True, absolute_return, relative_return, risk_free_rate, time)
@@ -206,3 +207,19 @@ def estimate_returns(
 		sorted_returns = quintiles * [0]
 	grouped_returns = np.array_split(sorted_returns, quintiles)  # type: ignore
 	evaluation_results.quantiles = [mean(x) for x in grouped_returns]
+	set_buy_and_hold_sharpe_ratio(
+		dataset,
+		training_data,
+		risk_free_rate_samples,
+		evaluation_results
+	)
+
+def set_buy_and_hold_sharpe_ratio(
+	dataset: RegressionDataset,
+	training_data: TrainingData,
+	risk_free_rate_samples: list[float],
+	evaluation_results: EvaluationResults
+) -> None:
+	records = [record for record in training_data.ohlc_series.values() if dataset.split <= record.time < dataset.end]
+	returns = [b.close / a.close - 1 for a, b in zip(records, records[1:])]
+	evaluation_results.set_buy_and_hold_sharpe_ratio(returns, risk_free_rate_samples)

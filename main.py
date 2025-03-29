@@ -95,10 +95,20 @@ def print_performance(results: list[EvaluationResults], result_category: str | N
 		"SigQ5",
 		"SigQ5 - SigQ1"
 	]]
+
+	def format_mean_absolute_error(mean_absolute_error: float) -> str:
+		return format_numeric_value(mean_absolute_error, ".4f", negative_threshold=lambda x: x > 0.25)
+
+	def format_sharpe_ratio(sharpe_ratio: float | None) -> str:
+		if sharpe_ratio is not None:
+			return format_numeric_value(sharpe_ratio, ".2f", lambda x: x > 0.8, lambda x: x < 0)
+		else:
+			return "-"
+
 	for model_type in sorted_by_model_type:
 		evaluation_results = total_model_performance[model_type]
 		for evaluation_result in evaluation_results:
-			buy_and_hold_performance_values[evaluation_result.symbol] = evaluation_result.buy_and_hold_performance
+			buy_and_hold_performance_values[evaluation_result.symbol] = (evaluation_result.buy_and_hold_performance, evaluation_result.buy_and_hold_sharpe_ratio)
 			performance = evaluation_result.get_annualized_performance()
 			model_performance_by_asset[evaluation_result.symbol].append(performance)
 		mean_performance_long = mean([x.get_annualized_long_performance() for x in evaluation_results])
@@ -134,15 +144,6 @@ def print_performance(results: list[EvaluationResults], result_category: str | N
 		mean_absolute_error_training, mean_absolute_error_validation = get_mean_absolute_error(evaluation_results)
 		quantile_cells = EvaluationResults.get_quantile_cells(quantiles)
 
-		def format_mean_absolute_error(mean_absolute_error: float) -> str:
-			return format_numeric_value(mean_absolute_error, ".4f", negative_threshold=lambda x: x > 0.25)
-
-		def format_sharpe_ratio(sharpe_ratio: float | None) -> str:
-			if sharpe_ratio is not None:
-				return format_numeric_value(sharpe_ratio, ".2f", lambda x: x > 0.8, lambda x: x < 0)
-			else:
-				return "-"
-
 		table.append([
 			evaluation_results[0].model_name,
 			mean_performance_long_string,
@@ -163,11 +164,14 @@ def print_performance(results: list[EvaluationResults], result_category: str | N
 		mean_value = mean(values)
 		return EvaluationResults.get_performance_string(mean_value)
 
-	buy_and_hold_performance_string = get_mean_string(list(buy_and_hold_performance_values.values()))
+	buy_and_hold_performance = [performance for performance, _sharpe_ratio in buy_and_hold_performance_values.values()][0]
+	buy_and_hold_sharpe_ratio = [sharpe_ratio for _performance, sharpe_ratio in buy_and_hold_performance_values.values()][0]
+
+	buy_and_hold_performance_string = EvaluationResults.get_performance_string(buy_and_hold_performance)
 	mean_performance_long_string = get_mean_string(all_models_performance_long)
 	mean_performance_short_string = get_mean_string(all_models_performance_short)
 	mean_performance_all_string = get_mean_string(all_models_performance_all)
-	print(f"Buy and hold performance: {buy_and_hold_performance_string}")
+	print(f"Buy and hold performance: {buy_and_hold_performance_string}, {format_sharpe_ratio(buy_and_hold_sharpe_ratio)} Sharpe ratio")
 	print(f"Mean performance of all models: long {mean_performance_long_string}, short {mean_performance_short_string}, all {mean_performance_all_string}")
 
 def print_general_info(

@@ -1,15 +1,13 @@
-from typing import Final
-from statistics import stdev, mean
 from math import sqrt
+from statistics import stdev, mean
+from typing import Final
 
-from colorama import Fore, Style
 import pandas as pd
+from colorama import Fore, Style
 
 from config import Configuration
-from data import TrainingData
 from enums import RebalanceFrequency
 from models import ModelType
-from technical import DAYS_SINCE_X
 
 class EvaluationResults:
 	DAYS_PER_YEAR: Final[float] = 365.25
@@ -37,6 +35,7 @@ class EvaluationResults:
 	quantiles: list[float] | None
 	result_category_id: int | None
 	result_category: str | None
+	buy_and_hold_sharpe_ratio: float | None
 
 	def __init__(
 		self,
@@ -80,6 +79,7 @@ class EvaluationResults:
 		self.quantiles = None
 		self.result_category_id = result_category_id
 		self.result_category = result_category
+		self.buy_and_hold_sharpe_ratio = None
 
 	def submit_trade(
 		self,
@@ -123,7 +123,6 @@ class EvaluationResults:
 			else:
 				return f"{performance_string} ({trades} trades)"
 
-		buy_and_hold_performance = self._get_annualized_performance(self.buy_and_hold_performance)
 		long_performance = self.get_annualized_long_performance()
 		short_performance = self.get_annualized_short_performance()
 		total_performance = self.get_annualized_performance()
@@ -131,7 +130,7 @@ class EvaluationResults:
 		prefix = f"[{symbol} {model_name}]"
 		print(f"{prefix} R2 scores: training {self.r2_score_training:.3f}, validation {self.r2_score_validation:.3f}")
 		print(f"{prefix} Mean absolute error: {self.mean_absolute_error_training:.4f} training, {self.mean_absolute_error_validation:.4f} validation")
-		print(f"{prefix} Buy and hold performance: {self.get_performance_string(buy_and_hold_performance)}")
+		print(f"{prefix} Buy and hold performance: {self.get_performance_string(self.buy_and_hold_performance)}")
 		print(f"{prefix} Model performance (long): {get_performance_trade_string(long_performance, len(self.long_trades))}")
 		print(f"{prefix} Model performance (short): {get_performance_trade_string(short_performance, len(self.short_trades))}")
 		print(f"{prefix} Model performance (all): {get_performance_trade_string(total_performance, len(self.all_trades))}")
@@ -191,6 +190,12 @@ class EvaluationResults:
 			output = f"{Fore.RED}{output}{Style.RESET_ALL}"
 		return output
 
+	def set_buy_and_hold_sharpe_ratio(self, returns: list[float], risk_free_rate_samples: list[float]):
+		returns_data = []
+		for daily_returns, risk_free_rate in zip(returns, risk_free_rate_samples):
+			returns_data.append((daily_returns, risk_free_rate))
+		self.buy_and_hold_sharpe_ratio = self._get_sharpe_ratio(returns_data, True)
+
 	@staticmethod
 	def _get_cash_performance(cash: float) -> float:
 		performance = cash / Configuration.INITIAL_CASH
@@ -203,18 +208,21 @@ class EvaluationResults:
 		annualized_performance = performance**(self.DAYS_PER_YEAR / days)
 		return annualized_performance
 
-	def _get_sharpe_ratio(self, returns_data: list[tuple[float, float]]) -> float | None:
+	def _get_sharpe_ratio(self, returns_data: list[tuple[float, float]], buy_and_hold: bool = False) -> float | None:
 		if len(returns_data) < 10:
 			return None
-		match self.rebalance_frequency:
-			case RebalanceFrequency.DAILY | RebalanceFrequency.DAILY_SPLIT:
-				factor = self.TRADING_DAYS_PER_YEAR
-			case RebalanceFrequency.WEEKLY:
-				factor = self.DAYS_PER_YEAR / 7
-			case RebalanceFrequency.MONTHLY:
-				factor = 12
-			case _:
-				raise Exception("Unknown rebalance frequency")
+		if buy_and_hold:
+			factor = self.TRADING_DAYS_PER_YEAR
+		else:
+			match self.rebalance_frequency:
+				case RebalanceFrequency.DAILY | RebalanceFrequency.DAILY_SPLIT:
+					factor = self.TRADING_DAYS_PER_YEAR
+				case RebalanceFrequency.WEEKLY:
+					factor = self.DAYS_PER_YEAR / 7
+				case RebalanceFrequency.MONTHLY:
+					factor = 12
+				case _:
+					raise Exception("Unknown rebalance frequency")
 		returns = [returns for returns, _risk_free_rate in returns_data]
 		risk_free_returns = [risk_free_rate for _returns, risk_free_rate in returns_data]
 		ratio = (factor * mean(returns) - mean(risk_free_returns)) / stdev(returns)
